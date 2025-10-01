@@ -1,0 +1,320 @@
+// worker.mjs — Solara API v7.3
+// Changes vs 7.2
+//  • Fix: NOT NULL users.email → upsert now guarantees a non-empty email using a fallback `${user_id}@noemail.local` if Stytch omits it.
+//  • Debug: GET /__whoami returns the verified auth payload and the DB user row.
+//  • Keeps: schema migrations for shares.*, FK-safe upserts, friendly root index, CORS, prefix.
+
+export default {
+  async fetch(req, env, ctx) {
+    const url = new URL(req.url);
+    const origin = req.headers.get('Origin') || '';
+    const method = req.method.toUpperCase();
+
+    if (method === 'OPTIONS') return withCORS(env, origin, new Response(null, { status: 204 }));
+
+    const path = normalizePath(url.pathname, env);
+
+    try {
+      await ensureSchema(env);
+
+      // Root index (helpful for manual hits)
+      if (path === '/' && method === 'GET') {
+        return j({ ok:true, service:'Solara API', endpoints:[
+          'GET /__health','GET /__echo','GET /__whoami','GET /auth/check',
+          'GET /workspaces','POST /workspaces','PATCH /workspaces/:id','DELETE /workspaces/:id',
+          'GET /tasks?workspace_id=...','POST /tasks'
+        ], prefix: env.ROUTE_PREFIX || '' }, 200, env, origin);
+      }
+
+      // Utilities
+      if (path === '/__health' && method === 'GET') {
+        const dbOK = await quickDbCheck(env).catch(() => false);
+        const hasStytch = !!(env.STYTCH_PROJECT_ID && env.STYTCH_SECRET);
+        return j({ ok:true, dbOK, hasStytch, prefix: env.ROUTE_PREFIX || '' }, 200, env, origin);
+      }
+      if (path === '/__echo' && method === 'GET') {
+        return j({ path: url.pathname, normalized: path, method, headers: Object.fromEntries(req.headers) }, 200, env, origin);
+      }
+      if (path === '/__whoami' && method === 'GET') {
+        const auth = await verifySession(req, env);
+        await upsertUser(env, auth);
+        const row = await env.DB.prepare('SELECT id,email,name,created_at,updated_at FROM users WHERE id = ?').bind(auth.user_id).first();
+        return j({ auth, dbUser: row || null }, 200, env, origin);
+      }
+
+      // Auth
+      if (path === '/auth/check' && method === 'GET') {
+        const auth = await verifySession(req, env);
+        await upsertUser(env, auth);
+        return j({ user_id: auth.user_id, email: auth.email, name: auth.name }, 200, env, origin);
+      }
+
+      // Workspaces
+      if (path === '/workspaces' && method === 'GET') {
+        const auth = await verifySession(req, env);
+        await upsertUser(env, auth);
+        const rows = await listWorkspaces(env, auth);
+        return j({ workspaces: rows }, 200, env, origin);
+      }
+      if (path === '/workspaces' && method === 'POST') {
+        const auth = await verifySession(req, env);
+        await upsertUser(env, auth);
+        const body = await readJson(req);
+        const name = (body?.name || '').trim();
+        if (!name) return j({ error: 'name_required' }, 400, env, origin);
+        const ws = await createWorkspace(env, auth, name);
+        return j({ workspace: ws }, 201, env, origin);
+      }
+      if (path.startsWith('/workspaces/') && (method === 'PATCH' || method === 'DELETE')) {
+        const auth = await verifySession(req, env);
+        await upsertUser(env, auth);
+        const id = path.split('/')[2];
+        if (!id) return j({ error: 'bad_request' }, 400, env, origin);
+        if (method === 'PATCH') {
+          const body = await readJson(req);
+          const name = (body?.name || '').trim();
+          if (!name) return j({ error: 'name_required' }, 400, env, origin);
+          const ok = await renameWorkspace(env, auth, id, name);
+          if (!ok) return j({ error: 'forbidden_or_not_found' }, 404, env, origin);
+          return j({ ok:true }, 200, env, origin);
+        } else {
+          const ok = await deleteWorkspace(env, auth, id);
+          if (!ok) return j({ error: 'forbidden_or_not_found' }, 404, env, origin);
+          return j({ ok:true }, 200, env, origin);
+        }
+      }
+
+      // Tasks
+      if (path === '/tasks' && method === 'GET') {
+        const auth = await verifySession(req, env);
+        await upsertUser(env, auth);
+        const wid = new URL(req.url).searchParams.get('workspace_id');
+        if (!wid) return j({ error: 'workspace_id_required' }, 400, env, origin);
+        const allowed = await canAccessWorkspace(env, auth, wid);
+        if (!allowed) return j({ error: 'not_found' }, 404, env, origin);
+        const tabs = await getTabs(env, wid);
+        return j({ tabs }, 200, env, origin);
+      }
+      if (path === '/tasks' && method === 'POST') {
+        const auth = await verifySession(req, env);
+        await upsertUser(env, auth);
+        const body = await readJson(req);
+        const wid = (body?.workspace_id || '').trim();
+        if (!wid) return j({ error: 'workspace_id_required' }, 400, env, origin);
+        const allowed = await canAccessWorkspace(env, auth, wid);
+        if (!allowed) return j({ error: 'not_found' }, 404, env, origin);
+        const tabs = body?.tabs && typeof body.tabs === 'object' ? body.tabs : {};
+        await saveTabs(env, wid, tabs);
+        return j({ ok:true }, 200, env, origin);
+      }
+
+      return j({ error:'not_found', path, hint:'If your API is routed under a prefix (e.g. /api), set env.ROUTE_PREFIX or include the prefix in API_BASE.' }, 404, env, origin);
+    } catch (err) {
+      const message = String(err?.message || err);
+      const code = /unauthorized/i.test(message) ? 401 : 500;
+      return j({ error: message }, code, env, origin);
+    }
+  }
+};
+
+// ===== Helpers =====
+function normalizePath(pathname, env) {
+  const prefix = (env.ROUTE_PREFIX || '').trim();
+  if (!prefix) return pathname.replace(/\/$/, '') || '/';
+  const want = prefix.startsWith('/') ? prefix : '/' + prefix;
+  let p = pathname;
+  if (p.startsWith(want)) p = p.slice(want.length) || '/';
+  return p.replace(/\/$/, '') || '/';
+}
+
+function withCORS(env, origin, res) {
+  const allowed = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const allow = allowed.length ? (allowed.includes(origin) ? origin : allowed[0]) : (origin || '*');
+  const h = new Headers(res.headers);
+  h.set('Access-Control-Allow-Origin', allow);
+  h.set('Vary', 'Origin');
+  h.set('Access-Control-Allow-Credentials', 'true');
+  h.set('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+  h.set('Access-Control-Allow-Headers', 'authorization, content-type');
+  return new Response(res.body, { status: res.status, headers: h });
+}
+
+function j(data, status, env, origin) {
+  return withCORS(env, origin, new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8' } }));
+}
+
+async function readJson(req) { if (!req.body) return {}; try { return await req.json(); } catch { return {}; } }
+
+function bearer(req) {
+  const h = req.headers.get('authorization') || req.headers.get('Authorization') || '';
+  const m = h.match(/^Bearer\s+(.+)$/i); return m ? m[1] : null;
+}
+
+function stytchBase(env) {
+  const pid = env.STYTCH_PROJECT_ID || '';
+  const sec = env.STYTCH_SECRET || '';
+  return (/test/.test(pid) || /test/.test(sec)) ? 'https://test.stytch.com' : 'https://api.stytch.com';
+}
+
+async function verifySession(req, env) {
+  const jwt = bearer(req) || '';
+  if (!jwt) throw new Error('unauthorized: missing bearer');
+  if (!env.STYTCH_PROJECT_ID || !env.STYTCH_SECRET) throw new Error('server_misconfig: missing stytch vars');
+  const auth = btoa(`${env.STYTCH_PROJECT_ID}:${env.STYTCH_SECRET}`);
+  const res = await fetch(`${stytchBase(env)}/v1/sessions/authenticate`, { method:'POST', headers:{ 'content-type':'application/json', authorization:`Basic ${auth}` }, body: JSON.stringify({ session_jwt: jwt }) });
+  if (res.status === 401) throw new Error('unauthorized: stytch rejected token');
+  if (!res.ok) throw new Error(`stytch_error_${res.status}`);
+  const data = await res.json();
+  const user = data?.user || {};
+  const emails = user?.email_addresses || data?.email_addresses || [];
+  const email = emails[0]?.email_address || data?.email || '';
+  const name = [user?.name?.first_name, user?.name?.last_name].filter(Boolean).join(' ') || data?.name || '';
+  const user_id = data?.user_id || user?.user_id || data?.session?.user_id || '';
+  if (!user_id) throw new Error('unauthorized: missing user_id');
+  return { user_id, email, name };
+}
+
+async function quickDbCheck(env) { try { await env.DB.exec('PRAGMA foreign_keys = ON;'); await env.DB.exec('SELECT 1;'); return true; } catch { return false; } }
+
+// ---- Schema & migrations ----
+async function columnExists(env, table, column) {
+  const rs = await env.DB.prepare(`PRAGMA table_info(${table});`).all();
+  const rows = rs.results || [];
+  return rows.some(r => String(r.name) === column);
+}
+
+async function ensureSharesColumns(env) {
+  if (!(await columnExists(env, 'shares', 'email'))) {
+    await env.DB.prepare(`ALTER TABLE shares ADD COLUMN email TEXT;`).run().catch(()=>{});
+    const hadInvitee = await columnExists(env, 'shares', 'invitee_email');
+    if (hadInvitee) { await env.DB.prepare(`UPDATE shares SET email = COALESCE(email, invitee_email) WHERE email IS NULL;`).run().catch(()=>{}); }
+  }
+  if (!(await columnExists(env, 'shares', 'accepted_by_user_id'))) {
+    await env.DB.prepare(`ALTER TABLE shares ADD COLUMN accepted_by_user_id TEXT;`).run().catch(()=>{});
+  }
+}
+
+async function ensureSchema(env) {
+  await env.DB.batch([
+    env.DB.prepare('PRAGMA foreign_keys = ON;'),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT,
+      name TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE CASCADE
+    );`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS shares (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      email TEXT,
+      invited_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      accepted_by_user_id TEXT,
+      UNIQUE(workspace_id, email),
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    );`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS workspace_state (
+      workspace_id TEXT PRIMARY KEY,
+      tabs_json TEXT NOT NULL DEFAULT '{}',
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    );`),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_id);'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_shares_ws ON shares(workspace_id);')
+  ]);
+  await ensureSharesColumns(env);
+}
+
+async function upsertUser(env, { user_id, email, name }) {
+  const now = new Date().toISOString();
+  // Guarantee a non-empty, unique email to satisfy legacy NOT NULL/UNIQUE constraints
+  const safeEmail = (email && String(email).trim()) || `${user_id}@noemail.local`;
+  const safeName = (name && String(name).trim()) || '';
+  const row = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(user_id).first();
+  if (row) {
+    await env.DB.prepare('UPDATE users SET email = ?, name = ?, updated_at = ? WHERE id = ?')
+      .bind(safeEmail, safeName || null, now, user_id).run();
+  } else {
+    await env.DB.prepare('INSERT INTO users (id, email, name, created_at, updated_at) VALUES (?,?,?,?,?)')
+      .bind(user_id, safeEmail, safeName || null, now, now).run();
+  }
+}
+
+function uuid() { try { return crypto.randomUUID(); } catch { return Math.random().toString(36).slice(2); } }
+
+async function listWorkspaces(env, auth) {
+  const q = `
+    SELECT DISTINCT w.id, w.name, w.owner_id, w.created_at, w.updated_at
+    FROM workspaces w
+    LEFT JOIN shares s ON s.workspace_id = w.id
+    WHERE w.owner_id = ?
+       OR s.accepted_by_user_id = ?
+       OR (s.email IS NOT NULL AND s.email = ?)
+    ORDER BY w.updated_at DESC, w.created_at DESC
+  `;
+  const rs = await env.DB.prepare(q).bind(auth.user_id, auth.user_id, auth.email || '').all();
+  return rs.results || [];
+}
+
+async function createWorkspace(env, auth, name) {
+  const id = uuid();
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO workspaces (id, owner_id, name, created_at, updated_at) VALUES (?,?,?,?,?)')
+      .bind(id, auth.user_id, name, now, now),
+    env.DB.prepare('INSERT INTO workspace_state (workspace_id, tabs_json, updated_at) VALUES (?, ?, ?)')
+      .bind(id, '{}', now)
+  ]);
+  return { id, name, owner_id: auth.user_id, created_at: now, updated_at: now };
+}
+
+async function renameWorkspace(env, auth, id, name) {
+  const owner = await env.DB.prepare('SELECT owner_id FROM workspaces WHERE id = ?').bind(id).first();
+  if (!owner || owner.owner_id !== auth.user_id) return false;
+  const now = new Date().toISOString();
+  await env.DB.prepare('UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ?').bind(name, now, id).run();
+  return true;
+}
+
+async function deleteWorkspace(env, auth, id) {
+  const owner = await env.DB.prepare('SELECT owner_id FROM workspaces WHERE id = ?').bind(id).first();
+  if (!owner || owner.owner_id !== auth.user_id) return false;
+  await env.DB.prepare('DELETE FROM workspaces WHERE id = ?').bind(id).run();
+  return true;
+}
+
+async function canAccessWorkspace(env, auth, id) {
+  const row = await env.DB.prepare(`
+    SELECT 1 FROM workspaces w
+    LEFT JOIN shares s ON s.workspace_id = w.id
+    WHERE w.id = ? AND (w.owner_id = ? OR s.accepted_by_user_id = ? OR (s.email IS NOT NULL AND s.email = ?))
+    LIMIT 1
+  `).bind(id, auth.user_id, auth.user_id, auth.email || '').first();
+  return !!row;
+}
+
+async function getTabs(env, workspace_id) {
+  const row = await env.DB.prepare('SELECT tabs_json FROM workspace_state WHERE workspace_id = ?')
+    .bind(workspace_id).first();
+  try { return row?.tabs_json ? JSON.parse(row.tabs_json) : {}; } catch { return {}; }
+}
+
+async function saveTabs(env, workspace_id, tabs) {
+  const now = new Date().toISOString();
+  const payload = JSON.stringify(tabs || {});
+  await env.DB.prepare(`
+    INSERT INTO workspace_state (workspace_id, tabs_json, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(workspace_id) DO UPDATE SET
+      tabs_json = excluded.tabs_json,
+      updated_at = excluded.updated_at
+  `).bind(workspace_id, payload, now).run();
+}
