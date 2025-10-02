@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Solara — Your Workspaces</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
     .card{box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.06)}
     .lift{transition:transform .15s ease, box-shadow .15s ease}
@@ -14,7 +15,7 @@
     .menu-card{ box-shadow: 0 10px 20px rgba(0,0,0,.08); }
   </style>
 </head>
-<body class="flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
+<body class="min-h-screen bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100 font-sans">
 
   <!-- Header — EXACT match with Tasks/Reports -->
   <header class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
@@ -43,7 +44,7 @@
     </div>
   </header>
 
-  <!-- Toolbar — EXACT dimensions + icons from Solara (px-6 py-2, text-sm, right-aligned Trash + Plus) -->
+  <!-- Secondary toolbar (EXACT like Solara/Reports: px-6 py-2, icons + plus) -->
   <nav class="flex items-center justify-between px-6 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-medium">
     <div class="flex items-center gap-6">
       <button class="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-semibold" disabled>
@@ -52,18 +53,18 @@
       </button>
     </div>
     <div class="flex items-center gap-3">
-      <!-- Delete (bulk mode toggle) -->
-      <button id="btnBulkDeleteToggle" title="Delete selected workspaces" class="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-all">
+      <button id="btnClearAll" title="Clear cached list" class="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-all">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m0 0A2.99 2.99 0 017 6h10a2.99 2.99 0 012.418 3H19v10a2 2 0 01-2 2H7a2 2 0 01-2-2V9h.582zM10 11v6m4-6v6"/></svg>
       </button>
-      <!-- Add (opens modal) -->
       <button id="btnAdd" class="px-4 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500 shadow transition" title="Add workspace">+</button>
     </div>
   </nav>
 
   <!-- Main -->
-  <main class="max-w-6xl mx-auto px-6 py-8 flex-1 w-full">
+  <main class="max-w-6xl mx-auto px-6 py-8">
     <div id="alert" class="hidden mb-4 p-3 rounded-xl text-sm"></div>
+
+    <!-- Removed top-right New workspace button -->
 
     <div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
 
@@ -71,13 +72,18 @@
       <div class="mx-auto w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">📁</div>
       <h3 class="text-lg font-semibold mb-1">No workspaces yet</h3>
       <p class="text-sm text-gray-500 mb-4">Create your first workspace to get started.</p>
-      <button id="btnNewEmpty" class="px-4 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500 shadow">New workspace</button>
+      <button id="btnNewEmpty" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium">New workspace</button>
     </div>
   </main>
 
-  <!-- Sticky bottom footer — exact replica spacing -->
+  <!-- Sticky bottom rail + footer (EXACT replica spacing and icons) -->
   <div class="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 z-50">
-    <footer class="text-center text-xs text-gray-500 dark:text-gray-400 px-6 py-3">© 2025 ZenLock Group (ZLG). All rights reserved.</footer>
+    <div class="flex items-center justify-between px-6 py-3 overflow-x-auto">
+      <div class="flex items-center gap-2 w-full overflow-x-auto px-1 py-1">
+        <div id="chips" class="flex gap-2 min-w-max"></div>
+      </div>
+    </div>
+    <footer class="text-center text-xs text-gray-500 dark:text-gray-400 px-6 py-3 border-t border-gray-200 dark:border-gray-700">© 2025 ZenLock Group (ZLG). All rights reserved.</footer>
   </div>
 
   <!-- Modal: New Workspace -->
@@ -98,21 +104,10 @@
     </div>
   </div>
 
-  <!-- Bulk Delete Bar (appears when toggled) -->
-  <div id="bulkBar" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-40 rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 px-4 py-3 shadow-lg">
-    <div class="flex items-center gap-3">
-      <span id="selectedCount" class="text-sm">0 selected</span>
-      <button id="btnDeleteSelected" class="px-3.5 py-2 rounded-xl border border-red-200 text-red-700 hover:bg-red-50 text-sm">Delete selected</button>
-      <button id="btnCancelBulk" class="px-3.5 py-2 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm">Cancel</button>
-    </div>
-  </div>
-
   <script>
     // ===== CONFIG =====
     const API_BASE = 'https://shy-smoke-ab8e.justinbhalla28.workers.dev';
     const base = () => API_BASE.replace(/\/+$/, '');
-    const $ = (s, r=document) => r.querySelector(s);
-    const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
 
     // ===== AUTH / USER UI (matches Tasks/Reports behaviors) =====
     const getCookie = (n)=>{ const m=document.cookie.match(new RegExp('(?:^|; )'+n+'=([^;]+)')); return m?decodeURIComponent(m[1]):null; };
@@ -156,17 +151,21 @@
       }catch{ return false; }
     }
     function updateAuthUI(){
-      $('#avatar').textContent = initialsFor(authedUser||{});
-      $('#userName').textContent = displayNameFor(authedUser||{}) || 'User';
-      $('#userEmail').textContent = (authedUser?.email_addresses?.[0]?.email_address) || '';
+      const avatar=document.getElementById('avatar');
+      const nameEl=document.getElementById('userName');
+      const emailEl=document.getElementById('userEmail');
+      const u = authedUser || { name:{}, email_addresses:[] };
+      avatar.textContent = initialsFor(u);
+      nameEl.textContent = displayNameFor(u) || 'User';
+      emailEl.textContent = u?.email_addresses?.[0]?.email_address || '';
     }
     function wireAuthButtons(){
-      $('#userButton').onclick = () => $('#userMenu').classList.toggle('hidden');
+      document.getElementById('userButton').onclick = () => document.getElementById('userMenu').classList.toggle('hidden');
       document.addEventListener('click',(e)=>{
-        const m=$('#userMenu'); const b=$('#userButton');
+        const m=document.getElementById('userMenu'); const b=document.getElementById('userButton');
         if(!m.classList.contains('hidden') && !m.contains(e.target) && !b.contains(e.target)) m.classList.add('hidden');
       });
-      $('#signOutBtn').onclick = ()=>{
+      document.getElementById('signOutBtn').onclick = ()=>{
         document.cookie='solara_session_jwt=; Max-Age=0; Path=/';
         document.cookie='stytch_session_jwt=; Max-Age=0; Path=/';
         localStorage.removeItem('stytch_session_jwt');
@@ -185,8 +184,10 @@
       return d.toLocaleDateString();
     };
     function setAlert(kind, msg){
-      const el=$('#alert');
-      el.className=`mb-4 p-3 rounded-xl text-sm ${kind==='error'?'bg-red-50 text-red-800 border border-red-200':'bg-emerald-50 text-emerald-800 border border-emerald-200'}`;
+      const el=document.getElementById('alert');
+      el.className=`mb-4 p-3 rounded-xl text-sm ${kind==='error'
+        ?'bg-red-50 text-red-800 border border-red-200'
+        :'bg-emerald-50 text-emerald-800 border border-emerald-200'}`;
       el.textContent=msg; el.classList.remove('hidden');
       setTimeout(()=>el.classList.add('hidden'),3500);
     }
@@ -217,14 +218,11 @@
     function wsCard(ws){
       const initials=(ws.name||'?').split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase();
       return `
-      <article class="lift rounded-2xl border border-gray-200 dark:border-gray-800 p-4 bg-white dark:bg-gray-950 card" data-id="${ws.id}">
+      <article class="lift rounded-2xl border border-gray-200 dark:border-gray-800 p-4 bg-white dark:bg-gray-950 card">
         <div class="flex items-start gap-3">
           <div class="w-10 h-10 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center font-semibold">${initials}</div>
           <div class="flex-1">
-            <h4 class="font-semibold leading-tight flex items-center justify-between">
-              <span>${escapeHtml(ws.name||'Untitled')}</span>
-              <input type="checkbox" class="hidden bulkbox w-4 h-4 rounded" aria-label="Select workspace ${escapeHtml(ws.name||'Untitled')}">
-            </h4>
+            <h4 class="font-semibold leading-tight">${escapeHtml(ws.name||'Untitled')}</h4>
             <p class="text-xs text-gray-500">Updated <time datetime="${ws.updated_at||ws.created_at}">${timeAgo(ws.updated_at||ws.created_at)}</time></p>
           </div>
         </div>
@@ -237,78 +235,53 @@
     }
 
     function showModal(on){
-      const m=$('#modal'); m.classList.toggle('hidden',!on);
-      if(on) setTimeout(()=>$('#wsName').focus(),0);
+      const m=document.getElementById('modal'); m.classList.toggle('hidden',!on);
+      if(on) setTimeout(()=>document.getElementById('wsName').focus(),0);
     }
 
     async function loadWorkspaces(){
-      const grid=$('#grid');
+      const grid=document.getElementById('grid');
       grid.innerHTML = Array.from({length:6}).map(cardSkeleton).join('');
       try{
         const res=await api('/workspaces'); if(!res) return;
         const data=await res.json(); const items=data.workspaces||[];
         localStorage.setItem('solara_ws_cache', JSON.stringify(items));
         if(!items.length){
-          $('#empty').classList.remove('hidden'); grid.innerHTML='';
+          document.getElementById('empty').classList.remove('hidden'); grid.innerHTML='';
           return;
         }
-        $('#empty').classList.add('hidden');
+        // Always sort by recently updated (sort control removed)
         items.sort((a,b)=> new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at));
         grid.innerHTML = items.map(wsCard).join('');
-        applyBulkModeUI();
       }catch(e){
         setAlert('error','Could not fetch workspaces: '+e.message);
         const cache = JSON.parse(localStorage.getItem('solara_ws_cache')||'[]');
         if(cache.length){
           cache.sort((a,b)=> new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at));
           grid.innerHTML = cache.map(wsCard).join('');
-          applyBulkModeUI();
         } else {
-          $('#empty').classList.remove('hidden'); grid.innerHTML='';
+          document.getElementById('empty').classList.remove('hidden'); grid.innerHTML='';
         }
       }
     }
 
-    // ===== Bulk Delete Mode =====
-    let bulkMode = false;
-    function setBulkMode(on){
-      bulkMode = !!on;
-      document.body.classList.toggle('bulk', bulkMode);
-      $('#bulkBar').classList.toggle('hidden', !bulkMode);
-      $$('#grid .bulkbox').forEach(cb=>{
-        cb.classList.toggle('hidden', !bulkMode);
-        cb.checked = false;
-      });
-      updateSelectedCount();
-    }
-    function updateSelectedCount(){
-      const n = $$('#grid .bulkbox:checked').length;
-      $('#selectedCount').textContent = `${n} selected`;
-    }
-    function applyBulkModeUI(){
-      $$('#grid .bulkbox').forEach(cb=> cb.classList.toggle('hidden', !bulkMode));
-    }
+    // Events
+    // (Removed: top-right New button wiring)
+    document.getElementById('btnNewEmpty').addEventListener('click',()=>showModal(true));
+    document.getElementById('modal').addEventListener('click',(e)=>{ if(e.target.matches('[data-close]')) showModal(false); });
 
-    // ===== Events =====
-    $('#btnAdd').addEventListener('click',()=>showModal(true));
-    $('#btnNewEmpty').addEventListener('click',()=>showModal(true));
-    $('#btnBulkDeleteToggle').addEventListener('click',()=> setBulkMode(!bulkMode));
-    $('#btnCancelBulk').addEventListener('click',()=> setBulkMode(false));
-
-    $('#btnDeleteSelected').addEventListener('click', async ()=>{
-      const ids = $$('#grid .bulkbox:checked').map(cb=> cb.closest('[data-id]').getAttribute('data-id'));
-      if(!ids.length) return;
-      if(!confirm(`Delete ${ids.length} workspace(s)? This cannot be undone.`)) return;
+    document.getElementById('formCreate').addEventListener('submit', async (e)=>{
+      e.preventDefault(); const name=document.getElementById('wsName').value.trim(); if(!name) return;
       try{
-        await Promise.all(ids.map(id=> api(`/workspaces/${id}`, { method:'DELETE' })));
-        setAlert('ok','Deleted.');
-        setBulkMode(false);
-        loadWorkspaces();
-      }catch(err){ setAlert('error','Delete failed: '+err.message); }
+        const res=await api('/workspaces',{ method:'POST', body: JSON.stringify({ name }) });
+        if(!res) return;
+        const { workspace }=await res.json();
+        localStorage.setItem('solara_last_ws', String(workspace.id));
+        location.href=`solara.html?ws=${encodeURIComponent(workspace.id)}`;
+      } catch(err){ setAlert('error','Create failed: '+err.message); }
     });
 
-    // Card actions
-    $('#grid').addEventListener('click', async (e)=>{
+    document.getElementById('grid').addEventListener('click', async (e)=>{
       const btn=e.target.closest('button'); if(!btn) return;
       const id=btn.getAttribute('data-open')||btn.getAttribute('data-rename')||btn.getAttribute('data-delete'); if(!id) return;
 
@@ -335,18 +308,29 @@
         } catch(err){ setAlert('error','Delete failed: '+err.message); }
       }
     });
+    // === Bottom bar helpers (chips from current grid) ===
+    function buildChipsFromDOM(){
+      const wrap = document.getElementById('chips'); if(!wrap) return;
+      wrap.innerHTML = '';
+      document.querySelectorAll('#grid [data-id]').forEach(card=>{
+        const id = card.getAttribute('data-id');
+        const name = (card.querySelector('h4')?.textContent||'').trim() || 'Untitled';
+        const b = document.createElement('button');
+        b.className='px-4 py-1.5 rounded-full text-sm font-medium bg-transparent border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-white transition-all duration-150 truncate max-w-[160px]';
+        b.title=name; b.textContent=name;
+        b.onclick=()=>{ localStorage.setItem('solara_last_ws', String(id)); location.href=`solara.html?ws=${encodeURIComponent(id)}`; };
+        wrap.appendChild(b);
+      });
+    }
 
-    // Modal wiring
-    $('#modal').addEventListener('click',(e)=>{ if(e.target.matches('[data-close]')) showModal(false); });
-    $('#formCreate').addEventListener('submit', async (e)=>{
-      e.preventDefault(); const name=$('#wsName').value.trim(); if(!name) return;
-      try{
-        const res=await api('/workspaces',{ method:'POST', body: JSON.stringify({ name }) });
-        if(!res) return;
-        const { workspace }=await res.json();
-        localStorage.setItem('solara_last_ws', String(workspace.id));
-        location.href=`solara.html?ws=${encodeURIComponent(workspace.id)}`;
-      } catch(err){ setAlert('error','Create failed: '+err.message); }
+    // Wire extra buttons (exact styles already in DOM)
+    document.addEventListener('DOMContentLoaded',()=>{
+      const grid = document.getElementById('grid');
+      if(grid){ new MutationObserver(buildChipsFromDOM).observe(grid, { childList:true }); }
+      const addBtn = document.getElementById('btnAdd'); if(addBtn) addBtn.addEventListener('click',()=>document.getElementById('modal').classList.remove('hidden')); if(!area) return;
+        html2pdf().set({ margin:.5, filename:'Solara-Workspaces.pdf', image:{type:'jpeg',quality:.98}, html2canvas:{scale:2}, jsPDF:{unit:'in', format:'letter', orientation:'portrait'} }).from(area).save();
+      });
+      const clearBtn = document.getElementById('btnClearAll'); if(clearBtn) clearBtn.addEventListener('click',()=>{ localStorage.removeItem('solara_ws_cache'); buildChipsFromDOM(); });
     });
 
     // Boot
