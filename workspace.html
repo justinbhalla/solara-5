@@ -97,13 +97,19 @@
 
   <script>
     // ===== CONFIG =====
-    const API_BASE = 'https://crimson-hill-6a85.justinbhalla28.workers.dev';
+    const API_BASE = 'https://shy-smoke-ab8e.justinbhalla28.workers.dev';
     const base = () => API_BASE.replace(/\/+$/, '');
     document.getElementById('healthLink').href = base() + '/__health';
 
     // ===== AUTH / USER UI =====
     const getCookie = (n)=>{ const m=document.cookie.match(new RegExp('(?:^|; )'+n+'=([^;]+)')); return m?decodeURIComponent(m[1]):null; };
-    const getJWT = ()=> localStorage.getItem('stytch_session_jwt') || getCookie('solara_session_jwt');
+    // Unified JWT lookup: LS -> stytch cookie -> legacy cookie
+    const getJWT = ()=> (
+      localStorage.getItem('stytch_session_jwt') ||
+      getCookie('stytch_session_jwt') ||
+      getCookie('solara_session_jwt')
+    );
+
     const initialsFor = (user)=>{
       const full=((user?.name?.first_name||'')+' '+(user?.name?.last_name||'')).trim();
       const fromName=full.split(/\s+/).filter(Boolean).slice(0,2).map(s=>s[0]).join('');
@@ -121,6 +127,7 @@
       return { name:{ first_name:first, last_name:last }, email_addresses: email ? [{ email_address: email }] : [] };
     }
     let authedUser = null;
+
     async function verifySessionAndHydrate(){
       const jwt=getJWT(); if(!jwt) return false;
       try{
@@ -150,7 +157,9 @@
         if(!m.classList.contains('hidden') && !m.contains(e.target) && !b.contains(e.target)) m.classList.add('hidden');
       });
       document.getElementById('signOutBtn').onclick = ()=>{
+        // Clear both cookie names + LS for safety
         document.cookie='solara_session_jwt=; Max-Age=0; Path=/';
+        document.cookie='stytch_session_jwt=; Max-Age=0; Path=/';
         localStorage.removeItem('stytch_session_jwt');
         localStorage.removeItem('stytch_user');
         location.href='sign-in.html';
