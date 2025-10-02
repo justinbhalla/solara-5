@@ -43,11 +43,30 @@
     </div>
   </header>
 
+  <!-- Secondary Toolbar (EXACT replica style of Tasks/Reports) -->
+  <section class="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+    <div class="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">Workspaces</h2>
+      </div>
+      <div class="flex items-center gap-2">
+        <!-- Delete mode toggle -->
+        <button id="btnBulkDeleteToggle" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800" title="Delete workspaces">
+          <span class="inline-block w-4 h-4">🗑️</span>
+          Delete
+        </button>
+        <!-- Add workspace -->
+        <button id="btnAdd" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium bg-indigo-600 text-white shadow-sm hover:bg-indigo-600/90" title="Add workspace">
+          <span class="inline-flex w-4 h-4 items-center justify-center font-bold">＋</span>
+          New workspace
+        </button>
+      </div>
+    </div>
+  </section>
+
   <!-- Main -->
   <main class="max-w-6xl mx-auto px-6 py-8">
     <div id="alert" class="hidden mb-4 p-3 rounded-xl text-sm"></div>
-
-    <!-- Removed top-right New workspace button -->
 
     <div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
 
@@ -55,9 +74,22 @@
       <div class="mx-auto w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">📁</div>
       <h3 class="text-lg font-semibold mb-1">No workspaces yet</h3>
       <p class="text-sm text-gray-500 mb-4">Create your first workspace to get started.</p>
-      <button id="btnNewEmpty" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium">New workspace</button>
+      <button id="btnNewEmpty" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium bg-indigo-600 text-white shadow-sm">New workspace</button>
     </div>
   </main>
+
+  <!-- Footer (match Tasks/Reports) -->
+  <footer class="border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+    <div class="max-w-6xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
+      <div>© <span id="year"></span> ZenLock Group · Solara</div>
+      <nav class="flex items-center gap-4">
+        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-200">About</a>
+        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-200">Privacy</a>
+        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-200">Terms</a>
+        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-200">Security</a>
+      </nav>
+    </div>
+  </footer>
 
   <!-- Modal: New Workspace -->
   <div id="modal" class="hidden fixed inset-0 z-50 items-center justify-center p-4">
@@ -77,12 +109,23 @@
     </div>
   </div>
 
+  <!-- Bulk Delete Bar -->
+  <div id="bulkBar" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-40 rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 px-4 py-3 shadow-lg">
+    <div class="flex items-center gap-3">
+      <span id="selectedCount" class="text-sm">0 selected</span>
+      <button id="btnDeleteSelected" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-700 hover:bg-red-50">Delete selected</button>
+      <button id="btnCancelBulk" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
+    </div>
+  </div>
+
   <script>
     // ===== CONFIG =====
     const API_BASE = 'https://shy-smoke-ab8e.justinbhalla28.workers.dev';
     const base = () => API_BASE.replace(/\/+$/, '');
+    const $ = (s, r=document) => r.querySelector(s);
+    const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
 
-    // ===== AUTH / USER UI (matches Tasks/Reports behaviors) =====
+    // ===== AUTH / USER UI =====
     const getCookie = (n)=>{ const m=document.cookie.match(new RegExp('(?:^|; )'+n+'=([^;]+)')); return m?decodeURIComponent(m[1]):null; };
     const getJWT = ()=> (
       localStorage.getItem('stytch_session_jwt') ||
@@ -124,21 +167,17 @@
       }catch{ return false; }
     }
     function updateAuthUI(){
-      const avatar=document.getElementById('avatar');
-      const nameEl=document.getElementById('userName');
-      const emailEl=document.getElementById('userEmail');
-      const u = authedUser || { name:{}, email_addresses:[] };
-      avatar.textContent = initialsFor(u);
-      nameEl.textContent = displayNameFor(u) || 'User';
-      emailEl.textContent = u?.email_addresses?.[0]?.email_address || '';
+      $('#avatar').textContent = initialsFor(authedUser||{});
+      $('#userName').textContent = displayNameFor(authedUser||{}) || 'User';
+      $('#userEmail').textContent = (authedUser?.email_addresses?.[0]?.email_address) || '';
     }
     function wireAuthButtons(){
-      document.getElementById('userButton').onclick = () => document.getElementById('userMenu').classList.toggle('hidden');
+      $('#userButton').onclick = () => $('#userMenu').classList.toggle('hidden');
       document.addEventListener('click',(e)=>{
-        const m=document.getElementById('userMenu'); const b=document.getElementById('userButton');
+        const m=$('#userMenu'); const b=$('#userButton');
         if(!m.classList.contains('hidden') && !m.contains(e.target) && !b.contains(e.target)) m.classList.add('hidden');
       });
-      document.getElementById('signOutBtn').onclick = ()=>{
+      $('#signOutBtn').onclick = ()=>{
         document.cookie='solara_session_jwt=; Max-Age=0; Path=/';
         document.cookie='stytch_session_jwt=; Max-Age=0; Path=/';
         localStorage.removeItem('stytch_session_jwt');
@@ -157,10 +196,8 @@
       return d.toLocaleDateString();
     };
     function setAlert(kind, msg){
-      const el=document.getElementById('alert');
-      el.className=`mb-4 p-3 rounded-xl text-sm ${kind==='error'
-        ?'bg-red-50 text-red-800 border border-red-200'
-        :'bg-emerald-50 text-emerald-800 border border-emerald-200'}`;
+      const el=$('#alert');
+      el.className=`mb-4 p-3 rounded-xl text-sm ${kind==='error'?'bg-red-50 text-red-800 border border-red-200':'bg-emerald-50 text-emerald-800 border border-emerald-200'}`;
       el.textContent=msg; el.classList.remove('hidden');
       setTimeout(()=>el.classList.add('hidden'),3500);
     }
@@ -183,19 +220,19 @@
     }
 
     function cardSkeleton(){
-      return `<article class="rounded-2xl border border-gray-200 dark:border-gray-800 p-4 bg-white dark:bg-gray-950">
-        <div class="h-6 w-1/2 rounded skeleton mb-3"></div>
-        <div class="h-4 w-2/3 rounded skeleton"></div>
-      </article>`;
+      return `<article class=\"rounded-2xl border border-gray-200 dark:border-gray-800 p-4 bg-white dark:bg-gray-950\">\n        <div class=\"h-6 w-1/2 rounded skeleton mb-3\"></div>\n        <div class=\"h-4 w-2/3 rounded skeleton\"></div>\n      </article>`;
     }
     function wsCard(ws){
       const initials=(ws.name||'?').split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase();
       return `
-      <article class="lift rounded-2xl border border-gray-200 dark:border-gray-800 p-4 bg-white dark:bg-gray-950 card">
+      <article class="lift rounded-2xl border border-gray-200 dark:border-gray-800 p-4 bg-white dark:bg-gray-950 card" data-id="${ws.id}">
         <div class="flex items-start gap-3">
           <div class="w-10 h-10 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center font-semibold">${initials}</div>
           <div class="flex-1">
-            <h4 class="font-semibold leading-tight">${escapeHtml(ws.name||'Untitled')}</h4>
+            <h4 class="font-semibold leading-tight flex items-center justify-between">
+              <span>${escapeHtml(ws.name||'Untitled')}</span>
+              <input type="checkbox" class="hidden bulkbox w-4 h-4 rounded" aria-label="Select workspace ${escapeHtml(ws.name||'Untitled')}">
+            </h4>
             <p class="text-xs text-gray-500">Updated <time datetime="${ws.updated_at||ws.created_at}">${timeAgo(ws.updated_at||ws.created_at)}</time></p>
           </div>
         </div>
@@ -208,53 +245,79 @@
     }
 
     function showModal(on){
-      const m=document.getElementById('modal'); m.classList.toggle('hidden',!on);
-      if(on) setTimeout(()=>document.getElementById('wsName').focus(),0);
+      const m=$('#modal'); m.classList.toggle('hidden',!on);
+      if(on) setTimeout(()=>$('#wsName').focus(),0);
     }
 
     async function loadWorkspaces(){
-      const grid=document.getElementById('grid');
+      const grid=$('#grid');
       grid.innerHTML = Array.from({length:6}).map(cardSkeleton).join('');
       try{
         const res=await api('/workspaces'); if(!res) return;
         const data=await res.json(); const items=data.workspaces||[];
         localStorage.setItem('solara_ws_cache', JSON.stringify(items));
         if(!items.length){
-          document.getElementById('empty').classList.remove('hidden'); grid.innerHTML='';
+          $('#empty').classList.remove('hidden'); grid.innerHTML='';
           return;
         }
-        // Always sort by recently updated (sort control removed)
+        $('#empty').classList.add('hidden');
         items.sort((a,b)=> new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at));
         grid.innerHTML = items.map(wsCard).join('');
+        applyBulkModeUI();
       }catch(e){
         setAlert('error','Could not fetch workspaces: '+e.message);
         const cache = JSON.parse(localStorage.getItem('solara_ws_cache')||'[]');
         if(cache.length){
           cache.sort((a,b)=> new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at));
           grid.innerHTML = cache.map(wsCard).join('');
+          applyBulkModeUI();
         } else {
-          document.getElementById('empty').classList.remove('hidden'); grid.innerHTML='';
+          $('#empty').classList.remove('hidden'); grid.innerHTML='';
         }
       }
     }
 
-    // Events
-    // (Removed: top-right New button wiring)
-    document.getElementById('btnNewEmpty').addEventListener('click',()=>showModal(true));
-    document.getElementById('modal').addEventListener('click',(e)=>{ if(e.target.matches('[data-close]')) showModal(false); });
+    // ===== Bulk Delete Mode =====
+    let bulkMode = false;
+    function setBulkMode(on){
+      bulkMode = !!on;
+      document.body.classList.toggle('bulk', bulkMode);
+      $('#bulkBar').classList.toggle('hidden', !bulkMode);
+      $$('#grid .bulkbox').forEach(cb=>{
+        cb.classList.toggle('hidden', !bulkMode);
+        cb.checked = false;
+      });
+      updateSelectedCount();
+    }
+    function updateSelectedCount(){
+      const n = $$('#grid .bulkbox:checked').length;
+      $('#selectedCount').textContent = `${n} selected`;
+    }
+    function applyBulkModeUI(){
+      $$('#grid .bulkbox').forEach(cb=> cb.classList.toggle('hidden', !bulkMode));
+    }
 
-    document.getElementById('formCreate').addEventListener('submit', async (e)=>{
-      e.preventDefault(); const name=document.getElementById('wsName').value.trim(); if(!name) return;
+    // ===== Events =====
+    // Toolbar buttons
+    $('#btnAdd').addEventListener('click',()=>showModal(true));
+    $('#btnNewEmpty').addEventListener('click',()=>showModal(true));
+    $('#btnBulkDeleteToggle').addEventListener('click',()=> setBulkMode(!bulkMode));
+    $('#btnCancelBulk').addEventListener('click',()=> setBulkMode(false));
+
+    $('#btnDeleteSelected').addEventListener('click', async ()=>{
+      const ids = $$('#grid .bulkbox:checked').map(cb=> cb.closest('[data-id]').getAttribute('data-id'));
+      if(!ids.length) return;
+      if(!confirm(`Delete ${ids.length} workspace(s)? This cannot be undone.`)) return;
       try{
-        const res=await api('/workspaces',{ method:'POST', body: JSON.stringify({ name }) });
-        if(!res) return;
-        const { workspace }=await res.json();
-        localStorage.setItem('solara_last_ws', String(workspace.id));
-        location.href=`solara.html?ws=${encodeURIComponent(workspace.id)}`;
-      } catch(err){ setAlert('error','Create failed: '+err.message); }
+        await Promise.all(ids.map(id=> api(`/workspaces/${id}`, { method:'DELETE' })));
+        setAlert('ok','Deleted.');
+        setBulkMode(false);
+        loadWorkspaces();
+      }catch(err){ setAlert('error','Delete failed: '+err.message); }
     });
 
-    document.getElementById('grid').addEventListener('click', async (e)=>{
+    // Grid actions
+    $('#grid').addEventListener('click', async (e)=>{
       const btn=e.target.closest('button'); if(!btn) return;
       const id=btn.getAttribute('data-open')||btn.getAttribute('data-rename')||btn.getAttribute('data-delete'); if(!id) return;
 
@@ -282,8 +345,28 @@
       }
     });
 
+    // Checkbox selection in bulk mode
+    $('#grid').addEventListener('change', (e)=>{
+      if(!e.target.classList.contains('bulkbox')) return;
+      updateSelectedCount();
+    });
+
+    // Modal form
+    $('#modal').addEventListener('click',(e)=>{ if(e.target.matches('[data-close]')) showModal(false); });
+    $('#formCreate').addEventListener('submit', async (e)=>{
+      e.preventDefault(); const name=$('#wsName').value.trim(); if(!name) return;
+      try{
+        const res=await api('/workspaces',{ method:'POST', body: JSON.stringify({ name }) });
+        if(!res) return;
+        const { workspace }=await res.json();
+        localStorage.setItem('solara_last_ws', String(workspace.id));
+        location.href=`solara.html?ws=${encodeURIComponent(workspace.id)}`;
+      } catch(err){ setAlert('error','Create failed: '+err.message); }
+    });
+
     // Boot
     (async ()=>{
+      document.getElementById('year').textContent = new Date().getFullYear();
       const ok = await verifySessionAndHydrate();
       if(!ok){ location.href='sign-in.html'; return; }
       wireAuthButtons();
