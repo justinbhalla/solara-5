@@ -1,31 +1,27 @@
-# Solara (Frontend) — `index.html`
 
-```html
 <!DOCTYPE html>
 <html lang="en" class="h-full">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Solara – Adaptive Workspace</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
-    :root{
-      --accent:#6366f1; /* indigo */
-      --accent-ink:#4f46e5;
-    }
-    html,body{height:100%; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans", Arial, sans-serif}
     .fade-in { animation: fadeIn .25s ease-in-out; }
     @keyframes fadeIn { from { opacity:.0; } to { opacity:1; } }
-    .drag-over { background-color: rgba(99,102,241,.1); outline: 2px dashed #6366f1; outline-offset: -2px; }
+    .drag-over { background-color: rgba(99,102,241,.08); outline: 2px dashed #6366f1; outline-offset: -2px; }
     .menu-card { box-shadow: 0 10px 20px rgba(0,0,0,.08); }
     .editable { outline: none; min-height: 1.5rem; }
+    .dragging { opacity: .6; transform: rotate(.5deg); }
+    .drop-indicator { height: .5rem; border-radius: .25rem; background: rgba(99,102,241,.45); margin: .25rem 0; display: none; }
+    .show-drop .drop-indicator { display: block; }
+    .date-badge { font-variant-numeric: tabular-nums; }
   </style>
 </head>
-<body class="flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+<body class="flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
 
-  <!-- Workspace hint banner -->
+  <!-- Workspace hint banner (only shows if no ws param found) -->
   <div id="wsBanner" class="hidden bg-amber-50 text-amber-900 border-b border-amber-200 px-6 py-2 text-sm">
     No workspace selected. <a class="underline font-medium" href="workspace.html">Go to Workspaces</a>
   </div>
@@ -52,12 +48,13 @@
           <div id="userEmail" class="text-gray-600 dark:text-gray-300"></div>
         </div>
         <div class="border-t border-gray-100 dark:border-gray-700"></div>
+        <button id="addUserBtn" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Add user…</button>
         <button id="signOutBtn" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">Sign out</button>
       </div>
     </div>
   </header>
 
-  <!-- Nav -->
+  <!-- Nav: left = section tabs, right = actions (Trash + Plus aligned to the right) -->
   <nav class="flex items-center justify-between px-6 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-medium">
     <div class="flex items-center gap-6">
       <button class="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-semibold">
@@ -73,10 +70,7 @@
       <button onclick="clearAllTasks()" title="Clear all tasks in current tab" class="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-all">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m0 0A2.99 2.99 0 017 6h10a2.99 2.99 0 012.418 3H19v10a2 2 0 01-2 2H7a2 2 0 01-2-2V9h.582zM10 11v6m4-6v6"/></svg>
       </button>
-      <!-- Square + button to match Solara spec -->
-      <button id="newTaskBtn" onclick="addNewTask()" class="w-8 h-8 grid place-items-center text-sm rounded-md bg-indigo-600 text-white hover:bg-indigo-500 shadow transition" title="Add Task" aria-label="Add Task">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-      </button>
+      <button id="newTaskBtn" onclick="addNewTask()" class="px-4 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500 shadow transition">+</button>
     </div>
   </nav>
 
@@ -85,66 +79,56 @@
     <div id="board" class="grid grid-cols-1 md:grid-cols-3 gap-6">
       <div id="todo" class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg shadow-sm" data-col="todo">
         <h2 class="text-lg font-semibold mb-2">To Do</h2>
+        <div class="drop-indicator"></div>
       </div>
       <div id="inprogress" class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg shadow-sm" data-col="inprogress">
         <h2 class="text-lg font-semibold mb-2">In Progress</h2>
+        <div class="drop-indicator"></div>
       </div>
       <div id="done" class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg shadow-sm" data-col="done">
         <h2 class="text-lg font-semibold mb-2">Done</h2>
+        <div class="drop-indicator"></div>
       </div>
     </div>
   </main>
 
-  <!-- Bottom rail (tabs left + export & cog right) -->
+  <!-- Bottom rail (tabs left + export right) -->
   <div class="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 z-50">
     <div class="flex items-center justify-between px-6 py-3 overflow-x-auto">
       <div class="flex items-center gap-2 w-full overflow-x-auto px-1 py-1">
         <div id="tabs" class="flex gap-2 min-w-max"></div>
-        <button onclick="promptNewTab()" title="Add Tab" class="w-8 h-8 grid place-items-center rounded-md bg-green-100 hover:bg-green-200 text-green-700 transition duration-150 shadow-sm border border-green-200" aria-label="Add Tab">
+        <button onclick="promptNewTab()" title="Add Tab" class="p-2 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition duration-150 shadow-sm border border-green-200">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
         </button>
       </div>
-      <div class="flex items-center gap-2">
-        <button onclick="exportBoardAsPDF()" class="w-8 h-8 grid place-items-center rounded-md hover:bg-indigo-100 text-indigo-600 transition" title="Download Board" aria-label="Download Board">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zm-7 4h14v-2H5v2z"/></svg>
+      <div class="flex items-center gap-1">
+        <!-- Members cogwheel -->
+        <button id="manageBtn" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition" title="Manage members">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.57-.906 3.435.96 2.53 2.53a1.724 1.724 0 001.065 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.906 1.57-.96 3.435-2.53 2.53a1.724 1.724 0 00-2.573 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.57.906-3.435-.96-2.53-2.53A1.724 1.724 0 003.087 13.9c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.906-1.57.96-3.435 2.53-2.53.98.565 2.229.11 2.642-1.13zM12 9a3 3 0 110 6 3 3 0 010-6z"/></svg>
         </button>
-        <button id="settingsBtn" class="w-8 h-8 grid place-items-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200 transition" title="Workspace settings" aria-label="Workspace settings">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M10.325 4.317a1 1 0 0 1 1.35-.436l.084.048 1.12.646a8 8 0 0 1 1.61-.934l.21-1.283A1 1 0 0 1 15.69 1h2.62a1 1 0 0 1 .988.83l.207 1.26c.58.24 1.13.544 1.646.902l1.143-.66a1 1 0 0 1 1.363.37l1.31 2.27a1 1 0 0 1-.254 1.282l-1.08.843c.08.53.12 1.073.12 1.626s-.04 1.096-.12 1.625l1.08.843a1 1 0 0 1 .254 1.282l-1.31 2.27a1 1 0 0 1-1.363.37l-1.142-.66a7.97 7.97 0 0 1-1.646.902l-.208 1.26a1 1 0 0 1-.988.83h-2.62a1 1 0 0 1-.988-.83l-.208-1.26a7.97 7.97 0 0 1-1.61-.934l-1.12.646a1 1 0 0 1-1.435-.418l-1.31-2.27a1 1 0 0 1 .272-1.287l1.065-.832A8.7 8.7 0 0 1 8 12c0-.553.04-1.096.119-1.625l-1.065-.832a1 1 0 0 1-.272-1.287l1.31-2.27a1 1 0 0 1 .233-.269zM12 9.5A2.5 2.5 0 1 0 12 14.5 2.5 2.5 0 0 0 12 9.5z"/>
-          </svg>
+        <button onclick="exportBoardAsPDF()" class="ml-1 p-2 rounded-full hover:bg-indigo-100 text-indigo-600 transition" title="Download Board">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zm-7 4h14v-2H5v2z"/></svg>
         </button>
       </div>
     </div>
     <footer class="text-center text-xs text-gray-500 dark:text-gray-400 px-6 py-3 border-t border-gray-200 dark:border-gray-700">© 2025 ZenLock Group (ZLG). All rights reserved.</footer>
   </div>
 
-  <!-- Settings / Members Modal -->
-  <div id="settingsModal" class="hidden fixed inset-0 z-[60] bg-black/40">
-    <div class="absolute right-6 bottom-20 w-[360px] rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-2xl">
-      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-        <h3 class="text-base font-semibold">Workspace Members</h3>
-        <button id="closeSettings" class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close settings">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18L18 6M6 6l12 12"/></svg>
+  <!-- Members Manager Modal -->
+  <div id="membersModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center">
+    <div class="absolute inset-0 bg-black/40" onclick="closeMembers()"></div>
+    <div class="relative w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 shadow-xl">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-lg font-semibold">Workspace Members</h3>
+        <button class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800" onclick="closeMembers()" title="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
-      <div class="p-4 space-y-4">
-        <div class="text-sm">
-          <div class="text-gray-500 dark:text-gray-400 mb-1">Owner</div>
-          <div id="ownerRow" class="px-3 py-2 rounded bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm"></div>
-        </div>
-        <div class="text-sm">
-          <div class="text-gray-500 dark:text-gray-400 mb-1">Invited Members</div>
-          <div id="invitesList" class="space-y-2"></div>
-        </div>
-        <div class="pt-2 border-t border-gray-200 dark:border-gray-700">
-          <label for="inviteEmail" class="block text-sm mb-1">Invite by email</label>
-          <div class="flex gap-2">
-            <input id="inviteEmail" type="email" class="flex-1 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-transparent" placeholder="name@example.com" />
-            <button id="inviteBtn" class="px-3 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-500">Invite</button>
-          </div>
-          <p id="inviteMsg" class="mt-2 text-xs text-gray-500"></p>
-        </div>
+      <div class="flex gap-2 mb-3">
+        <input id="inviteEmail" type="email" placeholder="name@example.com" class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm" />
+        <button onclick="inviteMember()" class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 text-sm">Invite</button>
       </div>
+      <div id="membersList" class="divide-y divide-gray-200 dark:divide-gray-700"></div>
     </div>
   </div>
 
@@ -152,8 +136,8 @@
 /*************************
  *  CONFIG               *
  *************************/
-const API_BASE = "https://YOUR-WORKER-SUBDOMAIN.workers.dev"; // TODO: set to your Worker URL
-const apiUrl = (p) => API_BASE.replace(/\/+$/, '') + '/' + String(p||'').replace(/^\/+/, '');
+const API_BASE = "https://crimson-hill-6a85.justinbhalla28.workers.dev"; // Worker origin
+const apiUrl = (p) => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
 
 /**************
  *  STATE     *
@@ -162,8 +146,11 @@ let WORKSPACE_ID = '';
 let activeTab = null;
 let tabData = {};
 let sessionJWT = null;
-let authedUser = null; // cached stytch user-like object {name:{...}, email_addresses:[...]}
+let authedUser = null; // { name:{first_name,last_name}, email_addresses:[{email_address}] }
 let currentUserKey = null; // user_id or email for namespacing
+let dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null };
+let STORAGE_NS = null; // stable localStorage namespace
+let currentRole = 'owner'; // 'owner' | 'editor' | 'viewer' (determined after load)
 
 /*******************
  *  UTILITIES       *
@@ -173,15 +160,38 @@ function getSessionJWT(){
   const m = document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : (localStorage.getItem('stytch_session_jwt') || localStorage.getItem('solara_session_jwt') || null);
 }
-function storageKey(){
-  const uid = currentUserKey || 'anon';
-  const wid = WORKSPACE_ID || 'local';
-  return `solara:tabs:${uid}:${wid}`;
+function computeStorageNS() {
+  const uidFromAuth = currentUserKey || (authedUser?.email_addresses?.[0]?.email_address) || null;
+  const widFromUrl  = WORKSPACE_ID || null;
+  const cachedUid = localStorage.getItem('solara_last_uid') || 'anon';
+  const cachedWid = localStorage.getItem('solara_last_ws')  || 'local';
+  const uid = uidFromAuth || cachedUid;
+  const wid = widFromUrl  || cachedWid;
+  STORAGE_NS = `solara:tabs:${uid}:${wid}`;
+  localStorage.setItem('solara_last_uid', uid);
+  localStorage.setItem('solara_last_ws', wid);
+}
+function storageKey(){ if(!STORAGE_NS) computeStorageNS(); return STORAGE_NS; }
+function normalizeDateString(input){
+  if(!input) return '';
+  if(typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
+  const d = new Date(input);
+  if (isNaN(d)) return '';
+  const tz = d.getTimezoneOffset()*60000;
+  return new Date(d.getTime()-tz).toISOString().slice(0,10);
 }
 function loadTabsFromStorage(){
-  try { const raw = localStorage.getItem(storageKey()); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+  try {
+    const raw = localStorage.getItem(storageKey());
+    const parsed = raw ? JSON.parse(raw) : {};
+    return migrateTaskShapes(parsed);
+  } catch { return {}; }
 }
-function saveTabsToStorage(){ try{ localStorage.setItem(storageKey(), JSON.stringify(tabData)); }catch{} }
+function saveTabsToStorage(){
+  const key = storageKey();
+  const json = JSON.stringify(tabData);
+  try{ localStorage.setItem(key, json); localStorage.setItem('solara_tabs_backup', json); }catch(e){ console.warn('Local save failed, writing backup', e); try{ localStorage.setItem('solara_tabs_backup', json); }catch{} }
+}
 function initialsFor(user){
   const full = ((user?.name?.first_name||'') + ' ' + (user?.name?.last_name||'')).trim();
   const fromName = full.split(/\s+/).filter(Boolean).slice(0,2).map(s=>s[0]).join('');
@@ -213,28 +223,63 @@ function migrateLegacyIfNeeded(){
   } catch {}
 }
 
+// Shape migration: ensure dueDate normalized and priority present
+function migrateTaskShapes(data){
+  const out = JSON.parse(JSON.stringify(data||{}));
+  Object.keys(out||{}).forEach(tab => {
+    ['todo','inprogress','done'].forEach(col => {
+      out[tab][col] = (out[tab][col]||[]).map(t => ({
+        id: t.id || `task-${Date.now()}`,
+        content: typeof t.content === 'string' ? t.content : '',
+        dueDate: normalizeDateString(t.dueDate),
+        priority: ['High','Medium','Low'].includes(t.priority) ? t.priority : 'Medium'
+      }));
+    });
+  });
+  return out;
+}
+
 /*******************
  *  CLOUD SYNC      *
  *******************/
 const saveTabsToCloud = debounce(async ()=>{
   if(!sessionJWT || !WORKSPACE_ID) return;
+  if(currentRole === 'viewer') return; // viewers cannot write
   try{
     const res = await fetch(apiUrl('tasks'), {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionJWT}` },
-      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs: tabData })
+      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs: tabData }),
+      keepalive: true,
     });
     if(res.status === 401){ console.warn('Cloud save unauthorized'); return; }
+    if(res.status === 403){ console.warn('Viewer cannot write'); return; }
     if(!res.ok) console.warn('Cloud save failed', await res.text());
   }catch(err){ console.warn('Cloud save error', err); }
 }, 450);
+async function flushCloudNow(){
+  if(!sessionJWT || !WORKSPACE_ID || currentRole==='viewer') return;
+  try{
+    await fetch(apiUrl('tasks'), {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionJWT}` },
+      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs: tabData }), keepalive: true,
+    });
+  }catch{}
+}
 async function loadTabsFromCloud(){
   if(!sessionJWT || !WORKSPACE_ID) return false;
   try{
     const url = apiUrl('tasks') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
     const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
     if(res.status === 401) return false;
-    if(res.ok){ const data = await res.json(); if(data && data.tabs){ tabData = data.tabs; saveTabsToStorage(); return true; } }
+    if(!res.ok) return false;
+    const data = await res.json();
+    if(!data || !data.tabs) return false;
+    const cloud = migrateTaskShapes(data.tabs);
+    const merged = { ...cloud, ...tabData };
+    tabData = merged;
+    saveTabsToStorage();
+    return true;
   }catch(err){ console.warn('Cloud load error', err); }
   return false;
 }
@@ -243,8 +288,19 @@ async function loadTabsFromCloud(){
  *  AUTH            *
  *******************/
 function requireReauth(){
-  try{ localStorage.removeItem('stytch_session_jwt'); localStorage.removeItem('stytch_user'); localStorage.removeItem('solara_session_jwt'); }catch{}
-  location.replace('/sign-in.html');
+  try{
+    localStorage.setItem('solara_last_uid', currentUserKey || localStorage.getItem('solara_last_uid') || 'anon');
+    localStorage.setItem('solara_last_ws',  WORKSPACE_ID   || localStorage.getItem('solara_last_ws')  || 'local');
+    computeStorageNS();
+    saveTabsToStorage();
+  }catch{}
+  flushCloudNow().finally(()=>{
+    try{
+      localStorage.removeItem('stytch_session_jwt');
+      localStorage.removeItem('solara_session_jwt');
+    }catch{}
+    location.replace('/sign-in.html');
+  });
 }
 function hydrateFromAuthCheckPayload(data){
   const full = (data?.name||'').trim();
@@ -254,6 +310,7 @@ function hydrateFromAuthCheckPayload(data){
   const email = data?.email || '';
   const uid   = data?.user_id || email || 'anon';
   currentUserKey = uid;
+  computeStorageNS();
   return { name:{ first_name:first, last_name:last }, email_addresses: email ? [{ email_address: email }] : [] };
 }
 function updateAuthUI(){
@@ -276,14 +333,13 @@ function wireAuthButtons(){
     try{ if(sessionJWT){ await fetch(apiUrl('logout'), { method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}` } }).catch(()=>{}); } }
     finally{ requireReauth(); }
   };
+  document.getElementById('addUserBtn').onclick = async () => { openMembers(); };
 }
 async function verifySessionAndHydrate(){
   sessionJWT = getSessionJWT();
   authedUser = JSON.parse(localStorage.getItem('stytch_user') || 'null');
-  if(!sessionJWT) return false; // redirect to sign-in
-
-  updateAuthUI(); // draw cached first
-
+  if(!sessionJWT) return false;
+  updateAuthUI();
   try{
     const res = await fetch(apiUrl('auth/check'), { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
     if(!res.ok){ return false; }
@@ -304,79 +360,94 @@ async function verifySessionAndHydrate(){
 }
 
 /*******************
- *  SETTINGS (Members)
+ *  MEMBERS (UI + API) *
  *******************/
-const settingsBtn = null; // set after DOM
-let settingsModal, closeSettings, invitesList, ownerRow, inviteBtn, inviteEmail, inviteMsg;
-function bindSettingsDom(){
-  window.settingsBtn = document.getElementById('settingsBtn');
-  settingsModal = document.getElementById('settingsModal');
-  closeSettings = document.getElementById('closeSettings');
-  invitesList = document.getElementById('invitesList');
-  ownerRow = document.getElementById('ownerRow');
-  inviteBtn = document.getElementById('inviteBtn');
-  inviteEmail = document.getElementById('inviteEmail');
-  inviteMsg = document.getElementById('inviteMsg');
-  settingsBtn?.addEventListener('click', showSettings);
-  closeSettings?.addEventListener('click', hideSettings);
-  settingsModal?.addEventListener('click', (e)=>{ if(e.target===settingsModal) hideSettings(); });
-  inviteBtn?.addEventListener('click', sendInvite);
-}
-function showSettings(){ settingsModal.classList.remove('hidden'); refreshMembers(); }
-function hideSettings(){ settingsModal.classList.add('hidden'); }
-async function refreshMembers(){
-  if (!WORKSPACE_ID || !sessionJWT) return;
-  ownerRow.textContent = 'Loading...';
-  invitesList.innerHTML = '';
+function openMembers(){ document.getElementById('membersModal').classList.remove('hidden'); loadMembers(); }
+function closeMembers(){ document.getElementById('membersModal').classList.add('hidden'); }
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btn = document.getElementById('manageBtn');
+  if(btn){ btn.addEventListener('click', ()=>{ if(!WORKSPACE_ID) return alert('Open a workspace to manage members.'); openMembers(); }); }
+});
+
+async function listShares(){
+  if(!sessionJWT) return [];
   const url = apiUrl('shares') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
-  const res = await fetch(url, { headers: { 'Authorization': `Bearer ${sessionJWT}` } });
-  if (!res.ok) { ownerRow.textContent = 'Failed to load members'; return; }
+  const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
+  if(!res.ok) { console.warn('listShares failed', await res.text()); return []; }
   const data = await res.json();
-  const owner = data?.members?.owner || {};
-  ownerRow.textContent = `${owner.name || '(Owner)'} — ${owner.email || ''}`;
-  const invites = data?.members?.invites || [];
-  if (!invites.length) {
-    const empty = document.createElement('div');
-    empty.className = 'px-3 py-2 rounded border border-dashed text-gray-500';
-    empty.textContent = 'No invited members yet.';
-    invitesList.appendChild(empty);
-  } else {
-    invites.forEach(m => {
-      const row = document.createElement('div');
-      row.className = 'flex items-center justify-between px-3 py-2 rounded border border-gray-200 dark:border-gray-700';
-      const tag = m.accepted_by_user_id ? ' (accepted)' : ' (invited)';
-      row.innerHTML = `<span>${m.email}${tag}</span>`;
-      const del = document.createElement('button');
-      del.className = 'px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200';
-      del.textContent = 'Remove';
-      del.onclick = async ()=>{
-        const delUrl = apiUrl('shares') + `/${encodeURIComponent(m.email)}?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
-        const r = await fetch(delUrl, { method:'DELETE', headers:{ 'Authorization': `Bearer ${sessionJWT}` } });
-        if (r.ok) refreshMembers(); else alert('Remove failed');
-      };
-      row.appendChild(del);
-      invitesList.appendChild(row);
-    });
+  // Determine role of current user
+  currentRole = 'owner';
+  const me = (authedUser?.email_addresses?.[0]?.email_address||'').toLowerCase();
+  const ownerRow = await fetch(apiUrl('workspaces') , { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}).then(r=>r.ok?r.json():{workspaces:[]}).catch(()=>({workspaces:[]}));
+  const thisWs = (ownerRow.workspaces||[]).find(w=>w.id===WORKSPACE_ID);
+  if(thisWs && thisWs.owner_id){
+    // if not owner, check shares
+    if (thisWs.owner_id !== (JSON.parse(localStorage.getItem('stytch_auth')||'{}').user_id||'__')) {
+      const share = (data.shares||[]).find(s=> (s.email||'').toLowerCase()===me && s.accepted_by_user_id);
+      if(share) currentRole = (share.role||'editor');
+    }
   }
+  return data.shares || [];
 }
-async function sendInvite(){
-  inviteMsg.textContent = '';
-  const email = (inviteEmail.value || '').trim();
-  if (!email) { inviteMsg.textContent = 'Enter an email'; return; }
-  if (!WORKSPACE_ID || !sessionJWT) return requireReauth();
-  const res = await fetch(apiUrl('shares'), {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${sessionJWT}` },
-    body: JSON.stringify({ workspace_id: WORKSPACE_ID, email })
+async function postShare(email){
+  const res = await fetch(apiUrl('shares'), { method:'POST', headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${sessionJWT}` }, body: JSON.stringify({ email, workspace_id: WORKSPACE_ID }) });
+  return res;
+}
+async function patchShare(id, role){
+  const res = await fetch(apiUrl(`shares/${id}`), { method:'PATCH', headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${sessionJWT}` }, body: JSON.stringify({ role }) });
+  return res;
+}
+async function deleteShare(id){
+  const res = await fetch(apiUrl(`shares/${id}`), { method:'DELETE', headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
+  return res;
+}
+
+async function loadMembers(){
+  const list = document.getElementById('membersList');
+  list.innerHTML = '<div class="py-6 text-sm text-gray-500">Loading…</div>';
+  const shares = await listShares();
+  if(!shares.length){ list.innerHTML = '<div class="py-6 text-sm text-gray-500">No members yet. Invite someone above.</div>'; return; }
+  list.innerHTML = '';
+  shares.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center justify-between py-3';
+    const who = document.createElement('div');
+    who.className = 'flex items-center gap-3';
+    const bubble = document.createElement('div');
+    bubble.className = 'h-8 w-8 rounded-full bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xs font-semibold';
+    bubble.textContent = (s.email || '?').slice(0,2).toUpperCase();
+    const meta = document.createElement('div');
+    meta.innerHTML = `<div class="text-sm font-medium">${s.email || '—'}</div>
+                      <div class="text-xs text-gray-500">${s.accepted_by_user_id ? 'Accepted' : 'Pending invite'} · invited ${new Date(s.invited_at||Date.now()).toLocaleDateString()}</div>`;
+    who.appendChild(bubble); who.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-2';
+    const sel = document.createElement('select');
+    sel.className = 'text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800';
+    ['editor','viewer'].forEach(r=>{ const o=document.createElement('option'); o.value=r; o.text=r; if(String(s.role||'editor')===r) o.selected=true; sel.appendChild(o); });
+    sel.onchange = async ()=>{ const r = await patchShare(s.id, sel.value); if(!r.ok) alert('Failed to update role'); };
+
+    const del = document.createElement('button');
+    del.className = 'px-2 py-1 text-xs rounded bg-red-50 text-red-600 hover:bg-red-100';
+    del.textContent = 'Remove';
+    del.onclick = async ()=>{ if(!confirm('Remove this member?')) return; const r = await deleteShare(s.id); if(r.ok) loadMembers(); else alert('Failed to remove'); };
+
+    actions.appendChild(sel); actions.appendChild(del);
+    row.appendChild(who); row.appendChild(actions);
+    list.appendChild(row);
   });
-  if (res.ok) {
-    inviteEmail.value = '';
-    inviteMsg.textContent = 'Invitation added.';
-    refreshMembers();
-  } else {
-    const t = await res.text();
-    inviteMsg.textContent = 'Invite failed: ' + t;
-  }
+}
+
+async function inviteMember(){
+  const input = document.getElementById('inviteEmail');
+  const email = (input.value||'').trim().toLowerCase();
+  if(!email) return;
+  if(!WORKSPACE_ID){ alert('No workspace selected.'); return; }
+  const r = await postShare(email);
+  if(r.ok){ input.value=''; loadMembers(); alert('Invitation created.'); }
+  else { const t = await r.text(); alert('Invite failed: ' + t); }
 }
 
 /*******************
@@ -424,14 +495,30 @@ function renderBoard(){
   columns.forEach(col => {
     const colEl = document.getElementById(col);
     colEl.querySelectorAll('[data-task]')?.forEach(n => n.remove());
-    colEl.ondragover = (e)=>{ e.preventDefault(); colEl.classList.add('drag-over'); };
-    colEl.ondragleave = ()=> colEl.classList.remove('drag-over');
-    colEl.ondrop = (e)=>{ e.preventDefault(); colEl.classList.remove('drag-over'); const taskId = e.dataTransfer.getData('text/plain'); moveTaskToColumn(taskId, col); };
+
+    colEl.ondragover = (e)=>{
+      e.preventDefault();
+      colEl.classList.add('drag-over','show-drop');
+      const after = getDragAfterElement(colEl, e.clientY);
+      const indicator = colEl.querySelector('.drop-indicator');
+      if(after == null){ colEl.appendChild(indicator); } else { colEl.insertBefore(indicator, after); }
+      dragContext.overCol = colEl.dataset.col;
+      dragContext.insertIndex = computeInsertIndex(colEl, indicator);
+    };
+    colEl.ondragleave = ()=>{ colEl.classList.remove('drag-over','show-drop'); };
+    colEl.ondrop = (e)=>{
+      e.preventDefault();
+      colEl.classList.remove('drag-over','show-drop');
+      const id = dragContext.id;
+      if(!id) return;
+      commitReorder(id, dragContext.fromCol, colEl.dataset.col, dragContext.insertIndex);
+      clearDragContext();
+    };
   });
   if(!activeTab || !tabData[activeTab]) return;
   ensureAtLeastOneTask();
   const data = tabData[activeTab];
-  columns.forEach(col => {
+  ['todo','inprogress','done'].forEach(col => {
     const colEl = document.getElementById(col);
     (data[col]||[]).forEach(t => { colEl.appendChild(createTaskElement(t.id, t.content, t.dueDate, t.priority, col)); });
   });
@@ -441,20 +528,29 @@ function createTaskElement(id, content='', dueDate='', priority='Medium', column
   const wrapper = document.createElement('div');
   wrapper.id = id; wrapper.setAttribute('data-task','1'); wrapper.draggable = true; wrapper.className = 'relative p-3 rounded bg-white dark:bg-gray-700 shadow cursor-move mb-2'; wrapper.setAttribute('data-column', column);
 
-  const editable = document.createElement('div'); editable.className = 'editable w-full font-medium mb-1'; editable.contentEditable = true; editable.innerText = content;
+  const editable = document.createElement('div'); editable.className = 'editable w-full font-medium mb-1'; editable.contentEditable = currentRole !== 'viewer'; editable.innerText = content;
   const placeholder = document.createElement('span'); placeholder.className = 'absolute left-3 top-3 text-sm text-gray-400 pointer-events-none'; placeholder.textContent = 'Click to edit...';
   function togglePlaceholder(){ placeholder.style.display = editable.innerText.trim()==='' ? 'block' : 'none'; }
 
   const row = document.createElement('div'); row.className = 'flex items-center gap-2';
-  const dateInput = document.createElement('input'); dateInput.type = 'date'; dateInput.value = dueDate || ''; dateInput.className = 'mt-1 text-xs bg-transparent text-gray-500 dark:text-gray-300';
-  const prioritySelect = document.createElement('select'); prioritySelect.className = 'mt-1 ml-2 text-xs bg-transparent text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded px-1'; ['High','Medium','Low'].forEach(level=>{ const opt=document.createElement('option'); opt.value=level; opt.text=level; if(level===priority) opt.selected=true; prioritySelect.appendChild(opt); });
+  const dateInput = document.createElement('input'); dateInput.type = 'date'; dateInput.value = normalizeDateString(dueDate) || ''; dateInput.disabled = (currentRole==='viewer'); dateInput.className = 'mt-1 text-xs bg-transparent text-gray-700 dark:text-gray-200 border border-transparent rounded px-1 date-badge';
+  const prioritySelect = document.createElement('select'); prioritySelect.disabled = (currentRole==='viewer'); prioritySelect.className = 'mt-1 ml-2 text-xs bg-transparent text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded px-1'; ['High','Medium','Low'].forEach(level=>{ const opt=document.createElement('option'); opt.value=level; opt.text=level; if(level===priority) opt.selected=true; prioritySelect.appendChild(opt); });
   const deleteBtn = document.createElement('button'); deleteBtn.className = 'absolute top-2 right-2 text-gray-400 hover:text-red-500'; deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'; deleteBtn.title = 'Delete Task'; deleteBtn.onclick = () => { if(confirm('Delete this task?')) removeTaskById(id); };
+  if(currentRole==='viewer') deleteBtn.disabled = true;
+
+  wrapper.addEventListener('dragstart', e => {
+    if(currentRole==='viewer'){ e.preventDefault(); return; }
+    wrapper.classList.add('dragging');
+    e.dataTransfer.setData('text/plain', id);
+    dragContext.id = id;
+    dragContext.fromCol = wrapper.getAttribute('data-column');
+  });
+  wrapper.addEventListener('dragend', () => { wrapper.classList.remove('dragging'); });
 
   editable.addEventListener('input', ()=>{ togglePlaceholder(); persistTaskEdits(id, { content: editable.innerText.trim() }); });
   editable.addEventListener('blur', ()=> persistTaskEdits(id, { content: editable.innerText.trim() }));
-  dateInput.addEventListener('change', ()=> persistTaskEdits(id, { dueDate: dateInput.value || '' }));
+  dateInput.addEventListener('change', ()=> persistTaskEdits(id, { dueDate: normalizeDateString(dateInput.value) }));
   prioritySelect.addEventListener('change', ()=> persistTaskEdits(id, { priority: prioritySelect.value || 'Medium' }));
-  wrapper.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', id); });
 
   row.appendChild(dateInput); row.appendChild(prioritySelect);
   wrapper.appendChild(editable); wrapper.appendChild(placeholder); wrapper.appendChild(row); wrapper.appendChild(deleteBtn);
@@ -462,27 +558,64 @@ function createTaskElement(id, content='', dueDate='', priority='Medium', column
   return wrapper;
 }
 
+// ---- Precise reorder helpers ----
+function clearDragContext(){ dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null }; }
+function getDragAfterElement(container, y){
+  const draggableElements = [...container.querySelectorAll('[data-task]:not(.dragging)')];
+  return draggableElements.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) { return { offset: offset, element: child }; } else { return closest; }
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+function computeInsertIndex(colEl, indicator){
+  const siblings = [...colEl.querySelectorAll('[data-task]')];
+  if (siblings.length === 0) return 0;
+  const all = [...colEl.children];
+  let index = 0;
+  for (let i=0; i<all.length; i++){
+    const el = all[i];
+    if(el === indicator){
+      index = [...all.slice(0,i)].filter(n => n.hasAttribute && n.hasAttribute('data-task')).length;
+      return index;
+    }
+  }
+  return siblings.length;
+}
+function commitReorder(taskId, fromCol, toCol, insertIndex){
+  if(!activeTab || !tabData[activeTab]) return;
+  if(currentRole==='viewer') return;
+  const cols = tabData[activeTab];
+  let moved; const fromList = cols[fromCol]||[]; const i = fromList.findIndex(t=>t.id===taskId);
+  if(i !== -1){ moved = fromList.splice(i,1)[0]; }
+  if(!moved) return;
+  const target = cols[toCol] = cols[toCol]||[];
+  if(insertIndex == null || insertIndex < 0) insertIndex = target.length;
+  if(insertIndex > target.length) insertIndex = target.length;
+  target.splice(insertIndex, 0, moved);
+  saveTabsToStorage();
+  renderBoard();
+  saveTabsToCloud();
+}
+
 function persistTaskEdits(taskId, patch){
   if(!activeTab || !tabData[activeTab]) return;
+  if(currentRole==='viewer') return;
   const cols = ['todo','inprogress','done'];
-  for(const col of cols){ const list = tabData[activeTab][col]||[]; const idx = list.findIndex(t=>t.id===taskId); if(idx!==-1){ Object.assign(list[idx], patch); break; } }
+  for(const col of cols){ const list = tabData[activeTab][col]||[]; const idx = list.findIndex(t=>t.id===taskId); if(idx!==-1){
+      if('dueDate' in patch) patch.dueDate = normalizeDateString(patch.dueDate);
+      Object.assign(list[idx], patch); break; } }
   saveTabsToStorage(); saveTabsToCloud();
 }
 function removeTaskById(taskId){
   if(!activeTab || !tabData[activeTab]) return;
+  if(currentRole==='viewer') return;
   const cols = ['todo','inprogress','done'];
   for(const col of cols){ const list = tabData[activeTab][col]||[]; const idx = list.findIndex(t=>t.id===taskId); if(idx!==-1){ list.splice(idx,1); break; } }
   saveTabsToStorage(); renderBoard(); saveTabsToCloud();
 }
-function moveTaskToColumn(taskId, targetCol){
-  if(!activeTab || !tabData[activeTab]) return;
-  const cols = ['todo','inprogress','done'];
-  let found=null;
-  for(const col of cols){ const list = tabData[activeTab][col]||[]; const idx = list.findIndex(t=>t.id===taskId); if(idx!==-1){ found = list.splice(idx,1)[0]; break; } }
-  if(found){ tabData[activeTab][targetCol] = tabData[activeTab][targetCol]||[]; tabData[activeTab][targetCol].push(found); saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
-}
-function clearAllTasks(){ if(!activeTab) return; if(!confirm('Clear all tasks in this tab?')) return; tabData[activeTab] = { todo:[], inprogress:[], done:[] }; saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
-function addNewTask(){ if(!activeTab){ const def='Click to edit'; if(!tabData[def]) tabData[def]={ todo:[], inprogress:[], done:[] }; activeTab=def; renderTabs(); }
+function clearAllTasks(){ if(!activeTab) return; if(currentRole==='viewer') return; if(!confirm('Clear all tasks in this tab?')) return; tabData[activeTab] = { todo:[], inprogress:[], done:[] }; saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
+function addNewTask(){ if(currentRole==='viewer') return; if(!activeTab){ const def='Click to edit'; if(!tabData[def]) tabData[def]={ todo:[], inprogress:[], done:[] }; activeTab=def; renderTabs(); }
   const id = `task-${Date.now()}`; const t = { id, content:'', dueDate:'', priority:'Medium' }; tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
 
 /*******************
@@ -500,434 +633,32 @@ function maybeAttachLastWorkspace(){
   if (last){ url.searchParams.set('ws', last); history.replaceState(null,'',url.toString()); }
 }
 
+window.addEventListener('pagehide', () => { try { saveTabsToStorage(); } catch {} flushCloudNow(); });
+
 document.addEventListener('DOMContentLoaded', async () => {
-  bindSettingsDom();
-  
-  // Ensure we have a workspace id or adopt the last one
   maybeAttachLastWorkspace();
   const url = new URL(location.href);
   WORKSPACE_ID = url.searchParams.get('ws') || '';
+  computeStorageNS();
   if(!WORKSPACE_ID){ document.getElementById('wsBanner').classList.remove('hidden'); }
 
-  // Require session; show placeholder avatar until hydrated
   const ok = await verifySessionAndHydrate();
   if(!ok) return requireReauth();
 
-  // IMPORTANT: migrate any legacy saved tabs into the new per-user/per-ws key
   migrateLegacyIfNeeded();
 
-  // Hydrate local tabs (namespaced by user+workspace)
   tabData = loadTabsFromStorage();
   if(Object.keys(tabData).length===0){ const def='Click to edit'; tabData[def] = { todo:[], inprogress:[], done:[] }; }
   activeTab = Object.keys(tabData)[0];
   renderTabs();
   switchTab(activeTab);
 
-  // Try cloud load (only if workspace id present)
+  wireAuthButtons();
+
   const loaded = await loadTabsFromCloud();
   if(loaded){ if(!tabData[activeTab]) activeTab = Object.keys(tabData)[0]||activeTab; renderTabs(); switchTab(activeTab); }
 });
 </script>
 </body>
 </html>
-```
 
----
-
-# Cloudflare Worker — `worker.mjs` (v8.0)
-
-```js
-// worker.mjs — Solara API v8.0
-// New in v8.0
-//  • Shares API: GET /shares?workspace_id=..., POST /shares, DELETE /shares/:email
-//  • Owner-gated mutations; member listing includes owner row
-//  • Keeps: schema migrations, CORS, Stytch auth, workspace/tasks state
-
-export default {
-  async fetch(req, env, ctx) {
-    const url = new URL(req.url);
-    const origin = req.headers.get('Origin') || '';
-    const method = req.method.toUpperCase();
-
-    if (method === 'OPTIONS') return withCORS(env, origin, new Response(null, { status: 204 }));
-
-    const path = normalizePath(url.pathname, env);
-
-    try {
-      await ensureSchema(env);
-
-      // Root index
-      if (path === '/' && method === 'GET') {
-        return j({ ok:true, service:'Solara API', endpoints:[
-          'GET /__health','GET /__echo','GET /__whoami','GET /auth/check','POST /logout',
-          'GET /workspaces','POST /workspaces','PATCH /workspaces/:id','DELETE /workspaces/:id',
-          'GET /tasks?workspace_id=...','POST /tasks',
-          'GET /shares?workspace_id=...','POST /shares','DELETE /shares/:email?workspace_id=...'
-        ], prefix: env.ROUTE_PREFIX || '' }, 200, env, origin);
-      }
-
-      // Utilities
-      if (path === '/__health' && method === 'GET') {
-        const dbOK = await quickDbCheck(env).catch(() => false);
-        const hasStytch = !!(env.STYTCH_PROJECT_ID && env.STYTCH_SECRET);
-        return j({ ok:true, dbOK, hasStytch, prefix: env.ROUTE_PREFIX || '' }, 200, env, origin);
-      }
-      if (path === '/__echo' && method === 'GET') {
-        return j({ path: url.pathname, normalized: path, method, headers: Object.fromEntries(req.headers) }, 200, env, origin);
-      }
-      if (path === '/__whoami' && method === 'GET') {
-        const auth = await verifySession(req, env);
-        await upsertUser(env, auth);
-        const row = await env.DB.prepare('SELECT id,email,name,created_at,updated_at FROM users WHERE id = ?').bind(auth.user_id).first();
-        return j({ auth, dbUser: row || null }, 200, env, origin);
-      }
-
-      // Auth
-      if (path === '/auth/check' && method === 'GET') {
-        const auth = await verifySession(req, env);
-        await upsertUser(env, auth);
-        return j({ user_id: auth.user_id, email: auth.email, name: auth.name }, 200, env, origin);
-      }
-      if (path === '/logout' && method === 'POST') {
-        // (Optional) Call Stytch to revoke session if you store session IDs.
-        return j({ ok:true }, 200, env, origin);
-      }
-
-      // Workspaces
-      if (path === '/workspaces' && method === 'GET') {
-        const auth = await verifySession(req, env);
-        await upsertUser(env, auth);
-        const rows = await listWorkspaces(env, auth);
-        return j({ workspaces: rows }, 200, env, origin);
-      }
-      if (path === '/workspaces' && method === 'POST') {
-        const auth = await verifySession(req, env);
-        await upsertUser(env, auth);
-        const body = await readJson(req);
-        const name = (body?.name || '').trim();
-        if (!name) return j({ error: 'name_required' }, 400, env, origin);
-        const ws = await createWorkspace(env, auth, name);
-        return j({ workspace: ws }, 201, env, origin);
-      }
-      if (path.startsWith('/workspaces/') && (method === 'PATCH' || method === 'DELETE')) {
-        const auth = await verifySession(req, env);
-        await upsertUser(env, auth);
-        const id = path.split('/')[2];
-        if (!id) return j({ error: 'bad_request' }, 400, env, origin);
-        if (method === 'PATCH') {
-          const body = await readJson(req);
-          const name = (body?.name || '').trim();
-          if (!name) return j({ error: 'name_required' }, 400, env, origin);
-          const ok = await renameWorkspace(env, auth, id, name);
-          if (!ok) return j({ error: 'forbidden_or_not_found' }, 404, env, origin);
-          return j({ ok:true }, 200, env, origin);
-        } else {
-          const ok = await deleteWorkspace(env, auth, id);
-          if (!ok) return j({ error: 'forbidden_or_not_found' }, 404, env, origin);
-          return j({ ok:true }, 200, env, origin);
-        }
-      }
-
-      // Tasks
-      if (path === '/tasks' && method === 'GET') {
-        const auth = await verifySession(req, env);
-        await upsertUser(env, auth);
-        const wid = new URL(req.url).searchParams.get('workspace_id');
-        if (!wid) return j({ error: 'workspace_id_required' }, 400, env, origin);
-        const allowed = await canAccessWorkspace(env, auth, wid);
-        if (!allowed) return j({ error: 'not_found' }, 404, env, origin);
-        const tabs = await getTabs(env, wid);
-        return j({ tabs }, 200, env, origin);
-      }
-      if (path === '/tasks' && method === 'POST') {
-        const auth = await verifySession(req, env);
-        await upsertUser(env, auth);
-        const body = await readJson(req);
-        const wid = (body?.workspace_id || '').trim();
-        if (!wid) return j({ error: 'workspace_id_required' }, 400, env, origin);
-        const allowed = await canAccessWorkspace(env, auth, wid);
-        if (!allowed) return j({ error: 'not_found' }, 404, env, origin);
-        const tabs = body?.tabs && typeof body.tabs === 'object' ? body.tabs : {};
-        await saveTabs(env, wid, tabs);
-        return j({ ok:true }, 200, env, origin);
-      }
-
-      // Shares (members)
-      if (path === '/shares' && method === 'GET') {
-        const auth = await verifySession(req, env);
-        await upsertUser(env, auth);
-        const wid = new URL(req.url).searchParams.get('workspace_id');
-        if (!wid) return j({ error:'workspace_id_required' }, 400, env, origin);
-        const can = await canAccessWorkspace(env, auth, wid);
-        if (!can) return j({ error:'not_found' }, 404, env, origin);
-        const rows = await listShares(env, wid);
-        const owner = await env.DB.prepare('SELECT w.owner_id, u.name, u.email FROM workspaces w JOIN users u ON w.owner_id = u.id WHERE w.id = ?').bind(wid).first();
-        return j({ members: { owner, invites: rows } }, 200, env, origin);
-      }
-      if (path === '/shares' && method === 'POST') {
-        const auth = await verifySession(req, env);
-        await upsertUser(env, auth);
-        const body = await readJson(req);
-        const wid = (body?.workspace_id || '').trim();
-        const email = (body?.email || '').trim().toLowerCase();
-        if (!wid)   return j({ error:'workspace_id_required' }, 400, env, origin);
-        if (!email) return j({ error:'email_required' }, 400, env, origin);
-        const isOwner = await isWorkspaceOwner(env, auth, wid);
-        if (!isOwner) return j({ error:'forbidden' }, 403, env, origin);
-        const ownerRow = await env.DB.prepare('SELECT u.email AS owner_email FROM workspaces w JOIN users u ON w.owner_id = u.id WHERE w.id = ?').bind(wid).first();
-        if (ownerRow && (ownerRow.owner_email||'').toLowerCase() === email) {
-          return j({ error:'cannot_invite_owner' }, 400, env, origin);
-        }
-        await inviteShare(env, wid, email);
-        return j({ ok:true }, 200, env, origin);
-      }
-      if (path.startsWith('/shares/') && method === 'DELETE') {
-        const auth = await verifySession(req, env);
-        await upsertUser(env, auth);
-        const email = decodeURIComponent(path.split('/')[2] || '').toLowerCase();
-        const wid = new URL(req.url).searchParams.get('workspace_id') || '';
-        if (!email || !wid) return j({ error:'email_and_workspace_id_required' }, 400, env, origin);
-        const isOwner = await isWorkspaceOwner(env, auth, wid);
-        if (!isOwner) return j({ error:'forbidden' }, 403, env, origin);
-        await removeShare(env, wid, email);
-        return j({ ok:true }, 200, env, origin);
-      }
-
-      return j({ error:'not_found', path, hint:'If your API is routed under a prefix (e.g. /api), set env.ROUTE_PREFIX or include the prefix in API_BASE.' }, 404, env, origin);
-    } catch (err) {
-      const message = String(err?.message || err);
-      const code = /unauthorized/i.test(message) ? 401 : 500;
-      return j({ error: message }, code, env, origin);
-    }
-  }
-};
-
-// ===== Helpers =====
-function normalizePath(pathname, env) {
-  const prefix = (env.ROUTE_PREFIX || '').trim();
-  if (!prefix) return pathname.replace(/\/$/, '') || '/';
-  const want = prefix.startsWith('/') ? prefix : '/' + prefix;
-  let p = pathname;
-  if (p.startsWith(want)) p = p.slice(want.length) || '/';
-  return p.replace(/\/$/, '') || '/';
-}
-
-function withCORS(env, origin, res) {
-  const allowed = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-  const allow = allowed.length ? (allowed.includes(origin) ? origin : allowed[0]) : (origin || '*');
-  const h = new Headers(res.headers);
-  h.set('Access-Control-Allow-Origin', allow);
-  h.set('Vary', 'Origin');
-  h.set('Access-Control-Allow-Credentials', 'true');
-  h.set('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
-  h.set('Access-Control-Allow-Headers', 'authorization, content-type');
-  return new Response(res.body, { status: res.status, headers: h });
-}
-
-function j(data, status, env, origin) {
-  return withCORS(env, origin, new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8' } }));
-}
-
-async function readJson(req) { if (!req.body) return {}; try { return await req.json(); } catch { return {}; } }
-
-function bearer(req) {
-  const h = req.headers.get('authorization') || req.headers.get('Authorization') || '';
-  const m = h.match(/^Bearer\s+(.+)$/i); return m ? m[1] : null;
-}
-
-function stytchBase(env) {
-  const pid = env.STYTCH_PROJECT_ID || '';
-  const sec = env.STYTCH_SECRET || '';
-  return (/test/.test(pid) || /test/.test(sec)) ? 'https://test.stytch.com' : 'https://api.stytch.com';
-}
-
-async function verifySession(req, env) {
-  const jwt = bearer(req) || '';
-  if (!jwt) throw new Error('unauthorized: missing bearer');
-  if (!env.STYTCH_PROJECT_ID || !env.STYTCH_SECRET) throw new Error('server_misconfig: missing stytch vars');
-  const auth = btoa(`${env.STYTCH_PROJECT_ID}:${env.STYTCH_SECRET}`);
-  const res = await fetch(`${stytchBase(env)}/v1/sessions/authenticate`, { method:'POST', headers:{ 'content-type':'application/json', authorization:`Basic ${auth}` }, body: JSON.stringify({ session_jwt: jwt }) });
-  if (res.status === 401) throw new Error('unauthorized: stytch rejected token');
-  if (!res.ok) throw new Error(`stytch_error_${res.status}`);
-  const data = await res.json();
-  const user = data?.user || {};
-  const emails = user?.email_addresses || data?.email_addresses || [];
-  const email = emails[0]?.email_address || data?.email || '';
-  const name = [user?.name?.first_name, user?.name?.last_name].filter(Boolean).join(' ') || data?.name || '';
-  const user_id = data?.user_id || user?.user_id || data?.session?.user_id || '';
-  if (!user_id) throw new Error('unauthorized: missing user_id');
-  return { user_id, email, name };
-}
-
-async function quickDbCheck(env) { try { await env.DB.exec('PRAGMA foreign_keys = ON;'); await env.DB.exec('SELECT 1;'); return true; } catch { return false; } }
-
-// ---- Schema & migrations ----
-async function columnExists(env, table, column) {
-  const rs = await env.DB.prepare(`PRAGMA table_info(${table});`).all();
-  const rows = rs.results || [];
-  return rows.some(r => String(r.name) === column);
-}
-
-async function ensureSharesColumns(env) {
-  if (!(await columnExists(env, 'shares', 'email'))) {
-    await env.DB.prepare(`ALTER TABLE shares ADD COLUMN email TEXT;`).run().catch(()=>{});
-    const hadInvitee = await columnExists(env, 'shares', 'invitee_email');
-    if (hadInvitee) { await env.DB.prepare(`UPDATE shares SET email = COALESCE(email, invitee_email) WHERE email IS NULL;`).run().catch(()=>{}); }
-  }
-  if (!(await columnExists(env, 'shares', 'accepted_by_user_id'))) {
-    await env.DB.prepare(`ALTER TABLE shares ADD COLUMN accepted_by_user_id TEXT;`).run().catch(()=>{});
-  }
-}
-
-async function ensureSchema(env) {
-  await env.DB.batch([
-    env.DB.prepare('PRAGMA foreign_keys = ON;'),
-    env.DB.prepare(`CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT,
-      name TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );`),
-    env.DB.prepare(`CREATE TABLE IF NOT EXISTS workspaces (
-      id TEXT PRIMARY KEY,
-      owner_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE CASCADE
-    );`),
-    env.DB.prepare(`CREATE TABLE IF NOT EXISTS shares (
-      id TEXT PRIMARY KEY,
-      workspace_id TEXT NOT NULL,
-      email TEXT,
-      invited_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      accepted_by_user_id TEXT,
-      UNIQUE(workspace_id, email),
-      FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
-    );`),
-    env.DB.prepare(`CREATE TABLE IF NOT EXISTS workspace_state (
-      workspace_id TEXT PRIMARY KEY,
-      tabs_json TEXT NOT NULL DEFAULT '{}',
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
-    );`),
-    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_id);'),
-    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_shares_ws ON shares(workspace_id);')
-  ]);
-  await ensureSharesColumns(env);
-}
-
-async function upsertUser(env, { user_id, email, name }) {
-  const now = new Date().toISOString();
-  const safeEmail = (email && String(email).trim()) || `${user_id}@noemail.local`;
-  const safeName = (name && String(name).trim()) || '';
-  const row = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(user_id).first();
-  if (row) {
-    await env.DB.prepare('UPDATE users SET email = ?, name = ?, updated_at = ? WHERE id = ?')
-      .bind(safeEmail, safeName || null, now, user_id).run();
-  } else {
-    await env.DB.prepare('INSERT INTO users (id, email, name, created_at, updated_at) VALUES (?,?,?,?,?)')
-      .bind(user_id, safeEmail, safeName || null, now, now).run();
-  }
-}
-
-function uuid() { try { return crypto.randomUUID(); } catch { return Math.random().toString(36).slice(2); } }
-
-async function listWorkspaces(env, auth) {
-  const q = `
-    SELECT DISTINCT w.id, w.name, w.owner_id, w.created_at, w.updated_at
-    FROM workspaces w
-    LEFT JOIN shares s ON s.workspace_id = w.id
-    WHERE w.owner_id = ?
-       OR s.accepted_by_user_id = ?
-       OR (s.email IS NOT NULL AND s.email = ?)
-    ORDER BY w.updated_at DESC, w.created_at DESC
-  `;
-  const rs = await env.DB.prepare(q).bind(auth.user_id, auth.user_id, auth.email || '').all();
-  return rs.results || [];
-}
-
-async function createWorkspace(env, auth, name) {
-  const id = uuid();
-  const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare('INSERT INTO workspaces (id, owner_id, name, created_at, updated_at) VALUES (?,?,?,?,?)')
-      .bind(id, auth.user_id, name, now, now),
-    env.DB.prepare('INSERT INTO workspace_state (workspace_id, tabs_json, updated_at) VALUES (?, ?, ?)')
-      .bind(id, '{}', now)
-  ]);
-  return { id, name, owner_id: auth.user_id, created_at: now, updated_at: now };
-}
-
-async function renameWorkspace(env, auth, id, name) {
-  const owner = await env.DB.prepare('SELECT owner_id FROM workspaces WHERE id = ?').bind(id).first();
-  if (!owner || owner.owner_id !== auth.user_id) return false;
-  const now = new Date().toISOString();
-  await env.DB.prepare('UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ?').bind(name, now, id).run();
-  return true;
-}
-
-async function deleteWorkspace(env, auth, id) {
-  const owner = await env.DB.prepare('SELECT owner_id FROM workspaces WHERE id = ?').bind(id).first();
-  if (!owner || owner.owner_id !== auth.user_id) return false;
-  await env.DB.prepare('DELETE FROM workspaces WHERE id = ?').bind(id).run();
-  return true;
-}
-
-async function canAccessWorkspace(env, auth, id) {
-  const row = await env.DB.prepare(`
-    SELECT 1 FROM workspaces w
-    LEFT JOIN shares s ON s.workspace_id = w.id
-    WHERE w.id = ? AND (w.owner_id = ? OR s.accepted_by_user_id = ? OR (s.email IS NOT NULL AND s.email = ?))
-    LIMIT 1
-  `).bind(id, auth.user_id, auth.user_id, auth.email || '').first();
-  return !!row;
-}
-
-async function getTabs(env, workspace_id) {
-  const row = await env.DB.prepare('SELECT tabs_json FROM workspace_state WHERE workspace_id = ?')
-    .bind(workspace_id).first();
-  try { return row?.tabs_json ? JSON.parse(row.tabs_json) : {}; } catch { return {}; }
-}
-
-async function saveTabs(env, workspace_id, tabs) {
-  const now = new Date().toISOString();
-  const payload = JSON.stringify(tabs || {});
-  await env.DB.prepare(`
-    INSERT INTO workspace_state (workspace_id, tabs_json, updated_at)
-    VALUES (?, ?, ?)
-    ON CONFLICT(workspace_id) DO UPDATE SET
-      tabs_json = excluded.tabs_json,
-      updated_at = excluded.updated_at
-  `).bind(workspace_id, payload, now).run();
-}
-
-// ---- Shares helpers ----
-async function isWorkspaceOwner(env, auth, wid) {
-  const row = await env.DB.prepare('SELECT owner_id FROM workspaces WHERE id = ?').bind(wid).first();
-  return !!row && row.owner_id === auth.user_id;
-}
-
-async function listShares(env, wid) {
-  const rs = await env.DB.prepare(`
-    SELECT email, invited_at, accepted_by_user_id
-    FROM shares
-    WHERE workspace_id = ?
-    ORDER BY invited_at DESC
-  `).bind(wid).all();
-  return rs.results || [];
-}
-
-async function inviteShare(env, wid, email) {
-  await env.DB.prepare(`
-    INSERT INTO shares (id, workspace_id, email, invited_at)
-    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(workspace_id, email) DO UPDATE SET invited_at = excluded.invited_at
-  `).bind(uuid(), wid, email).run();
-}
-
-async function removeShare(env, wid, email) {
-  await env.DB.prepare(`DELETE FROM shares WHERE workspace_id = ? AND email = ?`).bind(wid, email).run();
-}
-```
