@@ -14,7 +14,7 @@
     .menu-card{ box-shadow: 0 10px 20px rgba(0,0,0,.08); }
   </style>
 </head>
-<body class="min-h-screen bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100 font-sans">
+<body class="flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
 
   <!-- Header — EXACT match with Tasks/Reports -->
   <header class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
@@ -43,29 +43,26 @@
     </div>
   </header>
 
-  <!-- Secondary Toolbar (EXACT replica style of Tasks/Reports) -->
-  <section class="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-    <div class="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">Workspaces</h2>
-      </div>
-      <div class="flex items-center gap-2">
-        <!-- Delete mode toggle -->
-        <button id="btnBulkDeleteToggle" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800" title="Delete workspaces">
-          <span class="inline-block w-4 h-4">🗑️</span>
-          Delete
-        </button>
-        <!-- Add workspace -->
-        <button id="btnAdd" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium bg-indigo-600 text-white shadow-sm hover:bg-indigo-600/90" title="Add workspace">
-          <span class="inline-flex w-4 h-4 items-center justify-center font-bold">＋</span>
-          New workspace
-        </button>
-      </div>
+  <!-- Toolbar — EXACT dimensions + icons from Solara (px-6 py-2, text-sm, right-aligned Trash + Plus) -->
+  <nav class="flex items-center justify-between px-6 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-medium">
+    <div class="flex items-center gap-6">
+      <button class="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-semibold" disabled>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3h14v2H3V3zm0 4h9v2H3V7zm0 4h14v2H3v-2zm0 4h9v2H3v-2z"/></svg>
+        <span>Workspaces</span>
+      </button>
     </div>
-  </section>
+    <div class="flex items-center gap-3">
+      <!-- Delete (bulk mode toggle) -->
+      <button id="btnBulkDeleteToggle" title="Delete selected workspaces" class="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-all">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m0 0A2.99 2.99 0 017 6h10a2.99 2.99 0 012.418 3H19v10a2 2 0 01-2 2H7a2 2 0 01-2-2V9h.582zM10 11v6m4-6v6"/></svg>
+      </button>
+      <!-- Add (opens modal) -->
+      <button id="btnAdd" class="px-4 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500 shadow transition" title="Add workspace">+</button>
+    </div>
+  </nav>
 
   <!-- Main -->
-  <main class="max-w-6xl mx-auto px-6 py-8">
+  <main class="max-w-6xl mx-auto px-6 py-8 flex-1 w-full">
     <div id="alert" class="hidden mb-4 p-3 rounded-xl text-sm"></div>
 
     <div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
@@ -74,22 +71,14 @@
       <div class="mx-auto w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">📁</div>
       <h3 class="text-lg font-semibold mb-1">No workspaces yet</h3>
       <p class="text-sm text-gray-500 mb-4">Create your first workspace to get started.</p>
-      <button id="btnNewEmpty" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium bg-indigo-600 text-white shadow-sm">New workspace</button>
+      <button id="btnNewEmpty" class="px-4 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500 shadow">New workspace</button>
     </div>
   </main>
 
-  <!-- Footer (match Tasks/Reports) -->
-  <footer class="border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-    <div class="max-w-6xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
-      <div>© <span id="year"></span> ZenLock Group · Solara</div>
-      <nav class="flex items-center gap-4">
-        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-200">About</a>
-        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-200">Privacy</a>
-        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-200">Terms</a>
-        <a href="#" class="hover:text-gray-900 dark:hover:text-gray-200">Security</a>
-      </nav>
-    </div>
-  </footer>
+  <!-- Sticky bottom footer — exact replica spacing -->
+  <div class="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 z-50">
+    <footer class="text-center text-xs text-gray-500 dark:text-gray-400 px-6 py-3">© 2025 ZenLock Group (ZLG). All rights reserved.</footer>
+  </div>
 
   <!-- Modal: New Workspace -->
   <div id="modal" class="hidden fixed inset-0 z-50 items-center justify-center p-4">
@@ -109,12 +98,12 @@
     </div>
   </div>
 
-  <!-- Bulk Delete Bar -->
+  <!-- Bulk Delete Bar (appears when toggled) -->
   <div id="bulkBar" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-40 rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 px-4 py-3 shadow-lg">
     <div class="flex items-center gap-3">
       <span id="selectedCount" class="text-sm">0 selected</span>
-      <button id="btnDeleteSelected" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-700 hover:bg-red-50">Delete selected</button>
-      <button id="btnCancelBulk" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
+      <button id="btnDeleteSelected" class="px-3.5 py-2 rounded-xl border border-red-200 text-red-700 hover:bg-red-50 text-sm">Delete selected</button>
+      <button id="btnCancelBulk" class="px-3.5 py-2 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm">Cancel</button>
     </div>
   </div>
 
@@ -125,7 +114,7 @@
     const $ = (s, r=document) => r.querySelector(s);
     const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
 
-    // ===== AUTH / USER UI =====
+    // ===== AUTH / USER UI (matches Tasks/Reports behaviors) =====
     const getCookie = (n)=>{ const m=document.cookie.match(new RegExp('(?:^|; )'+n+'=([^;]+)')); return m?decodeURIComponent(m[1]):null; };
     const getJWT = ()=> (
       localStorage.getItem('stytch_session_jwt') ||
@@ -220,7 +209,10 @@
     }
 
     function cardSkeleton(){
-      return `<article class=\"rounded-2xl border border-gray-200 dark:border-gray-800 p-4 bg-white dark:bg-gray-950\">\n        <div class=\"h-6 w-1/2 rounded skeleton mb-3\"></div>\n        <div class=\"h-4 w-2/3 rounded skeleton\"></div>\n      </article>`;
+      return `<article class="rounded-2xl border border-gray-200 dark:border-gray-800 p-4 bg-white dark:bg-gray-950">
+        <div class="h-6 w-1/2 rounded skeleton mb-3"></div>
+        <div class="h-4 w-2/3 rounded skeleton"></div>
+      </article>`;
     }
     function wsCard(ws){
       const initials=(ws.name||'?').split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase();
@@ -298,7 +290,6 @@
     }
 
     // ===== Events =====
-    // Toolbar buttons
     $('#btnAdd').addEventListener('click',()=>showModal(true));
     $('#btnNewEmpty').addEventListener('click',()=>showModal(true));
     $('#btnBulkDeleteToggle').addEventListener('click',()=> setBulkMode(!bulkMode));
@@ -316,7 +307,7 @@
       }catch(err){ setAlert('error','Delete failed: '+err.message); }
     });
 
-    // Grid actions
+    // Card actions
     $('#grid').addEventListener('click', async (e)=>{
       const btn=e.target.closest('button'); if(!btn) return;
       const id=btn.getAttribute('data-open')||btn.getAttribute('data-rename')||btn.getAttribute('data-delete'); if(!id) return;
@@ -345,13 +336,7 @@
       }
     });
 
-    // Checkbox selection in bulk mode
-    $('#grid').addEventListener('change', (e)=>{
-      if(!e.target.classList.contains('bulkbox')) return;
-      updateSelectedCount();
-    });
-
-    // Modal form
+    // Modal wiring
     $('#modal').addEventListener('click',(e)=>{ if(e.target.matches('[data-close]')) showModal(false); });
     $('#formCreate').addEventListener('submit', async (e)=>{
       e.preventDefault(); const name=$('#wsName').value.trim(); if(!name) return;
@@ -366,7 +351,6 @@
 
     // Boot
     (async ()=>{
-      document.getElementById('year').textContent = new Date().getFullYear();
       const ok = await verifySessionAndHydrate();
       if(!ok){ location.href='sign-in.html'; return; }
       wireAuthButtons();
