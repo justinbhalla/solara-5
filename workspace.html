@@ -47,10 +47,7 @@
   <main class="max-w-6xl mx-auto px-6 py-8">
     <div id="alert" class="hidden mb-4 p-3 rounded-xl text-sm"></div>
 
-    <!-- Top row: only a New workspace button (header button removed) -->
-    <div class="mb-5 flex items-center justify-end">
-      <button id="btnNew" class="lift inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium shadow-sm">New workspace</button>
-    </div>
+    <!-- Removed top-right New workspace button -->
 
     <div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
 
@@ -242,7 +239,7 @@
     }
 
     // Events
-    document.getElementById('btnNew').addEventListener('click',()=>showModal(true));
+    // (Removed: top-right New button wiring)
     document.getElementById('btnNewEmpty').addEventListener('click',()=>showModal(true));
     document.getElementById('modal').addEventListener('click',(e)=>{ if(e.target.matches('[data-close]')) showModal(false); });
 
