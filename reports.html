@@ -118,7 +118,7 @@
 /*************************
  *  CONFIG               *
  *************************/
-const API_BASE = "https://crimson-hill-6a85.justinbhalla28.workers.dev"; // same Worker as Solara
+const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev"; // same Worker as Solara
 const apiUrl = (p) => API_BASE.replace(/\/+$/, '') + '/' + String(p||'').replace(/^\/+/, '');
 const params = new URLSearchParams(location.search);
 const WORKSPACE_ID = params.get('ws') || localStorage.getItem('solara_last_ws') || '';
