@@ -16,7 +16,6 @@
     .drop-indicator { height: .5rem; border-radius: .25rem; background: rgba(99,102,241,.45); margin: .25rem 0; display: none; }
     .show-drop .drop-indicator { display: block; }
     .date-badge { font-variant-numeric: tabular-nums; }
-    .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
   </style>
 </head>
 <body class="flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
@@ -37,7 +36,6 @@
     </div>
 
     <div class="flex items-center gap-3">
-      <span id="syncBadge" class="pill text-gray-600 border-gray-300 dark:text-gray-300 dark:border-gray-600">—</span>
       <!-- Signed-in user -->
       <div id="userArea" class="relative">
         <button id="userButton" class="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
@@ -150,7 +148,6 @@ let WORKSPACE_ID = '';
 let activeTab = null;
 let tabData = {};            // LOCAL (what UI shows)
 let BASE = {};               // last server snapshot we merged against
-let lastRemoteHash = '';     // hash of last cloud payload
 let saving = false;
 let dirty = false;
 let pollTimer = null;
@@ -214,7 +211,7 @@ const COLS = ['todo','inprogress','done'];
 function migrateTaskShapes(data){
   const out = JSON.parse(JSON.stringify(data||{}));
   Object.keys(out||{}).forEach(tab => {
-    COLS.forEach((col,idx) => {
+    COLS.forEach((col) => {
       let posCounter = 1;
       out[tab][col] = (out[tab][col]||[]).map(t => ({
         id: t.id || `task-${cryptoRandom()}`,
@@ -252,8 +249,6 @@ function newPosBetween(prev, next){
   const A = isFinite(prev) ? Number(prev) : 0;
   const B = isFinite(next) ? Number(next) : A + 2;
   if (B - A > 1e-6) return A + (B-A)/2;
-  // Reindex pathologically close lists: assign integers
-  // Caller should reindex the whole column if this triggers
   return A + 0.000001;
 }
 function reindexColumn(list){ list.forEach((t,i)=> t.pos = i+1); }
@@ -269,17 +264,13 @@ function mergeTabs(BASE0, LOCAL0, REMOTE0){
   const remIdx  = indexTabs(REMOTE);
 
   const out = clone(BASE);
-  // Ensure all tabs exist in output
   new Set([ ...Object.keys(LOCAL||{}), ...Object.keys(REMOTE||{}), ...Object.keys(BASE||{}) ]).forEach(tab => ensureTab(out, tab));
 
-  // Gather all task IDs
   const ids = new Set([ ...baseIdx.keys(), ...locIdx.keys(), ...remIdx.keys() ]);
 
-  // Helper to place task in a tab/col with pos
   function placeTask(t, tab, col, posHint){
     ensureTab(out, tab);
     const list = out[tab][col];
-    // if exists in list, replace
     const i = list.findIndex(x=>x.id===t.id);
     if(i !== -1){ list[i] = t; }
     else { list.push(t); }
@@ -300,22 +291,15 @@ function mergeTabs(BASE0, LOCAL0, REMOTE0){
     const l = locationOf(locIdx,  id);
     const r = locationOf(remIdx,  id);
 
-    // Deletions: if present in BASE, missing in LOCAL/REMOTE → treat as deleted where newer upd wins
     const bTask = b?.task; const lTask = l?.task; const rTask = r?.task;
 
-    // If missing in both LOCAL and REMOTE -> drop
     if(!lTask && !rTask){ removeTask(id); return; }
-
-    // If only in LOCAL -> take LOCAL (added by me)
     if(lTask && !rTask){ placeTask(lTask, l.tab, l.col, lTask.pos); return; }
-    // If only in REMOTE -> take REMOTE (added by others)
     if(rTask && !lTask){ placeTask(rTask, r.tab, r.col, rTask.pos); return; }
 
-    // Both exist: resolve field-by-field by upd (last writer wins)
     const newer = (a,b)=> (a?.upd||0) >= (b?.upd||0) ? a : b;
-    const winner = newer(lTask, rTask);
+    const winner = newer(lTask, rTask); // kept for possible future fields
 
-    // Column/tab move conflicts: prefer side with newer upd; else prefer LOCAL
     let tab = l.tab, col = l.col, pos = lTask.pos;
     if(l.tab!==r.tab || l.col!==r.col){
       if((lTask.upd||0) === (rTask.upd||0)) { tab = l.tab; col = l.col; pos = lTask.pos; }
@@ -323,9 +307,7 @@ function mergeTabs(BASE0, LOCAL0, REMOTE0){
       else { tab = r.tab; col = r.col; pos = rTask.pos; }
     }
 
-    // Merge fields
     const merged = { ...bTask, ...rTask, ...lTask };
-    // Ensure we keep the newest primitive fields explicitly
     ['content','dueDate','priority','pos','upd','by'].forEach(k=>{
       if (lTask && rTask){ merged[k] = (lTask.upd||0) >= (rTask.upd||0) ? lTask[k] : rTask[k]; }
       else if (lTask){ merged[k] = lTask[k]; }
@@ -335,14 +317,9 @@ function mergeTabs(BASE0, LOCAL0, REMOTE0){
     placeTask(merged, tab, col, pos);
   });
 
-  // Clean: remove empty tabs that don't exist in either LOCAL/REMOTE
-  Object.keys(out).forEach(tab => {
-    if(!(LOCAL[tab] || REMOTE[tab])) delete out[tab];
-  });
+  Object.keys(out).forEach(tab => { if(!(LOCAL[tab] || REMOTE[tab])) delete out[tab]; });
 
-  // Sort columns by pos
   sortCols(out);
-  // Reindex tight columns
   Object.keys(out).forEach(tab => COLS.forEach(col => reindexColumn(out[tab][col])));
 
   return out;
@@ -367,13 +344,7 @@ function saveTabsToStorage(){
 /*******************
  *  CLOUD SYNC      *
  *******************/
-const setSyncBadge = (state)=>{
-  const el = document.getElementById('syncBadge');
-  if(!el) return;
-  if(state==='syncing'){ el.textContent = '● Syncing…'; el.className = 'pill text-indigo-700 border-indigo-300 dark:text-indigo-300 dark:border-indigo-500'; }
-  else if(state==='offline'){ el.textContent = '● Offline'; el.className = 'pill text-amber-700 border-amber-300 dark:text-amber-300 dark:border-amber-500'; }
-  else { el.textContent = '● Synced'; el.className = 'pill text-emerald-700 border-emerald-300 dark:text-emerald-300 dark:border-emerald-500'; }
-};
+const setSyncBadge = (state)=>{ /* no-op, badge removed */ };
 
 async function fetchCloudTabs(){
   if(!sessionJWT || !WORKSPACE_ID) return null;
@@ -400,31 +371,26 @@ async function postCloudTabs(tabs){
 const saveTabsToCloud = debounce(async ()=>{
   if(!sessionJWT || !WORKSPACE_ID) return;
   if(currentRole==='viewer') return;
-  dirty = true; // mark dirty until round-trip completes
+  dirty = true;
   await syncMergeAndSave('push');
 }, SAVE_DEBOUNCE_MS);
 
 async function syncMergeAndSave(mode){
-  // mode: 'push' (local edits) or 'pull' (poll refresh)
-  if(saving) return; // avoid overlapping
+  if(saving) return;
   saving = true; setSyncBadge('syncing');
   try{
     const REMOTE = await fetchCloudTabs();
     if(REMOTE==null){ setSyncBadge('offline'); return; }
 
-    // First launch init for BASE
     if(Object.keys(BASE).length===0) BASE = clone(REMOTE);
 
-    // 3-way merge
     const merged = mergeTabs(BASE, tabData, REMOTE);
 
-    // If mode is 'push' and role allows, write merged to server
     if(mode==='push' && currentRole!=='viewer'){
       const ok = await postCloudTabs(merged);
       if(!ok){ console.warn('Cloud save failed'); setSyncBadge('offline'); return; }
     }
 
-    // Adopt merged as both LOCAL and BASE; update view if changed
     const before = hash(tabData);
     tabData = merged;
     BASE = clone(merged);
@@ -537,7 +503,6 @@ async function listShares(){
   const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
   if(!res.ok) { console.warn('listShares failed', await res.text()); return []; }
   const data = await res.json();
-  // Determine role of current user
   currentRole = 'owner';
   const me = (authedUser?.email_addresses?.[0]?.email_address||'').toLowerCase();
   const ownerRow = await fetch(apiUrl('workspaces') , { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}).then(r=>r.ok?r.json():{workspaces:[]}).catch(()=>({workspaces:[]}));
@@ -627,7 +592,6 @@ function renderTabs(){
     tabBtn.ondblclick = () => {
       const newName = prompt('Rename tab:', name);
       if (!newName || !newName.trim() || newName === name || tabData[newName]) return;
-      // Move data and stamp update times to avoid conflicts
       tabData[newName] = tabData[name];
       delete tabData[name];
       if (activeTab === name) activeTab = newName;
@@ -750,7 +714,6 @@ function commitReorder(taskId, fromCol, toCol, insertIndex){
   if(insertIndex == null || insertIndex < 0) insertIndex = target.length;
   if(insertIndex > target.length) insertIndex = target.length;
 
-  // Compute new pos between neighbors
   const prev = target[insertIndex-1]?.pos;
   const next = target[insertIndex]?.pos;
   let nextPos = newPosBetween(prev, next);
@@ -758,7 +721,6 @@ function commitReorder(taskId, fromCol, toCol, insertIndex){
   moved.upd = Date.now();
   moved.by = currentUserKey;
   target.splice(insertIndex, 0, moved);
-  // Reindex if needed (too close)
   if(!isFinite(prev) || !isFinite(next) || Math.abs((next||nextPos)-(prev||0)) < 1e-6){ reindexColumn(target); }
   saveTabsToStorage();
   renderBoard();
@@ -835,9 +797,7 @@ async function initialLoad(){
 
   // Cloud bootstrap + start poller
   const REMOTE = await fetchCloudTabs();
-  if(REMOTE){ BASE = clone(REMOTE); tabData = mergeTabs({}, tabData, REMOTE); saveTabsToStorage(); renderTabs(); switchTab(activeTab); setSyncBadge('synced'); }
-  else { setSyncBadge('offline'); }
-
+  if(REMOTE){ BASE = clone(REMOTE); tabData = mergeTabs({}, tabData, REMOTE); saveTabsToStorage(); renderTabs(); switchTab(activeTab); }
   startPoller();
 }
 
