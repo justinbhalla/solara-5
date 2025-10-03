@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en" class="h-full">
 <head>
@@ -20,55 +21,47 @@
 </head>
 <body class="flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
 
-  <!-- Top status banner -->
-  <div id="statusBanner" class="hidden bg-amber-50 text-amber-900 border-b border-amber-200 px-6 py-2 text-sm"></div>
+  <!-- Workspace hint banner (only shows if no ws param found) -->
+  <div id="wsBanner" class="hidden bg-amber-50 text-amber-900 border-b border-amber-200 px-6 py-2 text-sm">
+    No workspace selected. <a class="underline font-medium" href="workspace.html">Go to Workspaces</a>
+  </div>
 
   <!-- Header -->
   <header class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
     <div class="flex items-center gap-3">
-      <a href="workspaces.html" class="w-9 h-9 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center hover:bg-indigo-600/20" title="All Workspaces">🔷</a>
+      <a href="workspace.html" class="w-9 h-9 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center hover:bg-indigo-600/20" title="Back to Workspaces">🔷</a>
       <div>
         <h1 class="text-3xl font-bold tracking-tight">Solara</h1>
         <p class="text-sm text-gray-500 dark:text-gray-400">Part of the ZLG Product Suite</p>
       </div>
     </div>
 
-    <div class="flex items-center gap-3">
-      <!-- Workspace switcher -->
-      <div class="hidden sm:flex items-center gap-2">
-        <label for="wsSelect" class="text-xs text-gray-500">Workspace</label>
-        <select id="wsSelect" class="text-sm px-2 py-1 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 min-w-[14rem]"></select>
-        <button id="reloadBtn" class="px-2 py-1 rounded-lg border border-gray-300 dark:border-gray-700 text-sm hover:bg-gray-50 dark:hover:bg-gray-800" title="Reload from cloud">Reload</button>
-      </div>
-
-      <!-- User -->
-      <div id="userArea" class="relative">
-        <button id="userButton" class="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-          <span id="avatar" class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-semibold">?</span>
-          <span id="userName" class="text-sm font-medium">User</span>
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd"/></svg>
-        </button>
-        <div id="userMenu" class="hidden absolute right-0 mt-2 w-56 rounded-xl menu-card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
-          <div class="px-4 py-3 text-sm">
-            <div id="userEmail" class="text-gray-600 dark:text-gray-300"></div>
-          </div>
-          <div class="border-t border-gray-100 dark:border-gray-700"></div>
-          <button id="addUserBtn" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Add user…</button>
-          <button id="signOutBtn" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">Sign out</button>
+    <!-- Signed-in user -->
+    <div id="userArea" class="relative">
+      <button id="userButton" class="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+        <span id="avatar" class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-semibold">?</span>
+        <span id="userName" class="text-sm font-medium">User</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd"/></svg>
+      </button>
+      <div id="userMenu" class="hidden absolute right-0 mt-2 w-56 rounded-xl menu-card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div class="px-4 py-3 text-sm">
+          <div id="userEmail" class="text-gray-600 dark:text-gray-300"></div>
         </div>
+        <div class="border-t border-gray-100 dark:border-gray-700"></div>
+        <button id="addUserBtn" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Add user…</button>
+        <button id="signOutBtn" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">Sign out</button>
       </div>
     </div>
   </header>
 
-  <!-- Nav bar -->
+  <!-- Nav: left = section tabs, right = actions (Trash + Plus aligned to the right) -->
   <nav class="flex items-center justify-between px-6 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-medium">
     <div class="flex items-center gap-6">
       <button class="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-semibold">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3h14v2H3V3zm0 4h9v2H3V7zm0 4h14v2H3v-2zm0 4h9v2H3v-2z"/></svg>
         <span>Tasks</span>
       </button>
-      <!-- Restored Reports tab -->
-      <button id="reportsBtn" onclick="openReports()" class="flex items-center gap-2 text-gray-700 dark:text-gray-200 hover:text-indigo-600">
+      <button onclick="window.location.href='reports.html'" class="flex items-center gap-2 text-gray-700 dark:text-gray-200 hover:text-indigo-600">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 16v-4m4 4V8m4 8V5"/></svg>
         <span>Reports</span>
       </button>
@@ -80,11 +73,6 @@
       <button id="newTaskBtn" onclick="addNewTask()" class="px-4 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500 shadow transition">+</button>
     </div>
   </nav>
-
-  <!-- Cloud / workspace breadcrumb -->
-  <div class="px-6 py-2 text-xs text-gray-500 dark:text-gray-400">
-    <span id="wsCrumb">–</span>
-  </div>
 
   <!-- Main Board -->
   <main class="p-6 flex-1 overflow-y-auto">
@@ -114,6 +102,7 @@
         </button>
       </div>
       <div class="flex items-center gap-1">
+        <!-- Members cogwheel -->
         <button id="manageBtn" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition" title="Manage members">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.57-.906 3.435.96 2.53 2.53a1.724 1.724 0 001.065 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.906 1.57-.96 3.435-2.53 2.53a1.724 1.724 0 00-2.573 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.57.906-3.435-.96-2.53-2.53A1.724 1.724 0 003.087 13.9c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.906-1.57.96-3.435 2.53-2.53.98.565 2.229.11 2.642-1.13zM12 9a3 3 0 110 6 3 3 0 010-6z"/></svg>
         </button>
@@ -140,7 +129,6 @@
         <button onclick="inviteMember()" class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 text-sm">Invite</button>
       </div>
       <div id="membersList" class="divide-y divide-gray-200 dark:divide-gray-700"></div>
-      <p class="text-xs text-gray-500 mt-3">Tip: If email is delayed or goes to Spam, use “Copy link” to share the invite URL directly.</p>
     </div>
   </div>
 
@@ -149,15 +137,12 @@
  *  CONFIG               *
  *************************/
 const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev"; // Worker origin
-const apiUrl = (p) => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+,'');
-const POLL_MS = 3500; // lightweight convergence polling
+const apiUrl = (p) => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
 
 /**************
  *  STATE     *
  **************/
 let WORKSPACE_ID = '';
-let WORKSPACE_NAME = '';
-let workspaces = [];
 let activeTab = null;
 let tabData = {};
 let sessionJWT = null;
@@ -165,18 +150,12 @@ let authedUser = null; // { name:{first_name,last_name}, email_addresses:[{email
 let currentUserKey = null; // user_id or email for namespacing
 let dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null };
 let STORAGE_NS = null; // stable localStorage namespace
-let currentRole = 'owner'; // 'owner' | 'editor' | 'viewer'
-let pollTimer = null;
+let currentRole = 'owner'; // 'owner' | 'editor' | 'viewer' (determined after load)
 
 /*******************
  *  UTILITIES       *
  *******************/
 const debounce = (fn, ms = 600) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
-function q(sel){ return document.querySelector(sel) }
-function showBanner(msg, color='amber'){ const el=q('#statusBanner'); el.textContent=msg; el.className=`bg-${color}-50 text-${color}-900 border-b border-${color}-200 px-6 py-2 text-sm`; el.classList.remove('hidden'); }
-function hideBanner(){ const el=q('#statusBanner'); el.classList.add('hidden'); }
-function qsParam(k){ return new URL(location.href).searchParams.get(k) }
-function setQsParam(k,v){ const u = new URL(location.href); if(v==null||v==='') u.searchParams.delete(k); else u.searchParams.set(k,v); history.replaceState(null,'',u.toString()); }
 function getSessionJWT(){
   const m = document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : (localStorage.getItem('stytch_session_jwt') || localStorage.getItem('solara_session_jwt') || null);
@@ -244,6 +223,7 @@ function migrateLegacyIfNeeded(){
   } catch {}
 }
 
+// Shape migration: ensure dueDate normalized and priority present
 function migrateTaskShapes(data){
   const out = JSON.parse(JSON.stringify(data||{}));
   Object.keys(out||{}).forEach(tab => {
@@ -275,17 +255,15 @@ const saveTabsToCloud = debounce(async ()=>{
     if(res.status === 401){ console.warn('Cloud save unauthorized'); return; }
     if(res.status === 403){ console.warn('Viewer cannot write'); return; }
     if(!res.ok) console.warn('Cloud save failed', await res.text());
-    await loadTabsFromCloud(); renderTabs(); renderBoard(); // converge to server copy
   }catch(err){ console.warn('Cloud save error', err); }
 }, 450);
 async function flushCloudNow(){
   if(!sessionJWT || !WORKSPACE_ID || currentRole==='viewer') return;
   try{
-    const r = await fetch(apiUrl('tasks'), {
+    await fetch(apiUrl('tasks'), {
       method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionJWT}` },
       body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs: tabData }), keepalive: true,
     });
-    if(r.ok){ await loadTabsFromCloud(); renderTabs(); renderBoard(); }
   }catch{}
 }
 async function loadTabsFromCloud(){
@@ -294,20 +272,20 @@ async function loadTabsFromCloud(){
     const url = apiUrl('tasks') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
     const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
     if(res.status === 401) return false;
-    if(res.status === 404){ showBanner('This workspace is not available to your account (404). Switch to another workspace or ask the owner to re-invite you.','red'); return false; }
-    if(!res.ok) { showBanner('Could not load tasks. Please try Reload.','red'); return false; }
+    if(!res.ok) return false;
     const data = await res.json();
-    if(!data || !data.tabs){ tabData = {}; saveTabsToStorage(); return true; }
+    if(!data || !data.tabs) return false;
     const cloud = migrateTaskShapes(data.tabs);
-    tabData = cloud;                // CLOUD IS AUTHORITATIVE
+    const merged = { ...cloud, ...tabData };
+    tabData = merged;
     saveTabsToStorage();
     return true;
-  }catch(err){ console.warn('Cloud load error', err); showBanner('Network error loading tasks.','red'); }
+  }catch(err){ console.warn('Cloud load error', err); }
   return false;
 }
 
 /*******************
- *  AUTH & WORKSPACES *
+ *  AUTH            *
  *******************/
 function requireReauth(){
   try{
@@ -357,7 +335,6 @@ function wireAuthButtons(){
   };
   document.getElementById('addUserBtn').onclick = async () => { openMembers(); };
 }
-
 async function verifySessionAndHydrate(){
   sessionJWT = getSessionJWT();
   authedUser = JSON.parse(localStorage.getItem('stytch_user') || 'null');
@@ -382,59 +359,19 @@ async function verifySessionAndHydrate(){
   }
 }
 
-async function fetchWorkspaces(){
-  try{
-    const r = await fetch(apiUrl('workspaces'), { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
-    if(!r.ok){ showBanner('Could not load workspaces.','red'); return []; }
-    const data = await r.json().catch(()=>({workspaces:[]}));
-    workspaces = data.workspaces||[];
-    return workspaces;
-  }catch(e){ showBanner('Network error loading workspaces.','red'); return []; }
-}
-
-function fillWorkspaceSelect(){
-  const sel = document.getElementById('wsSelect');
-  sel.innerHTML = '';
-  if(!workspaces.length){
-    const o = document.createElement('option'); o.text='No workspaces available'; sel.appendChild(o); sel.disabled = true; return;
-  }
-  sel.disabled = false;
-  workspaces.forEach(w => {
-    const o = document.createElement('option'); o.value = w.id; o.text = w.name || w.id; if(w.id === WORKSPACE_ID) o.selected = true; sel.appendChild(o);
-  });
-  sel.onchange = ()=>{ switchWorkspace(sel.value); };
-}
-
-async function switchWorkspace(id){
-  if(!id) return;
-  WORKSPACE_ID = id;
-  const ws = workspaces.find(w=>w.id===id);
-  WORKSPACE_NAME = ws ? ws.name : '';
-  setQsParam('ws', id);
-  localStorage.setItem('solara_last_ws', id);
-  computeStorageNS();
-  tabData = loadTabsFromStorage();
-  if(Object.keys(tabData).length===0){ const def='Click to edit'; tabData[def] = { todo:[], inprogress:[], done:[] }; }
-  activeTab = Object.keys(tabData)[0];
-  await loadTabsFromCloud();
-  updateWorkspaceCrumb();
-  renderTabs();
-  renderBoard();
-}
-
-function updateWorkspaceCrumb(){
-  const el = document.getElementById('wsCrumb');
-  el.textContent = WORKSPACE_NAME ? `${WORKSPACE_NAME} (${WORKSPACE_ID})` : (WORKSPACE_ID || '—');
-}
-
 /*******************
  *  MEMBERS (UI + API) *
  *******************/
 function openMembers(){ document.getElementById('membersModal').classList.remove('hidden'); loadMembers(); }
 function closeMembers(){ document.getElementById('membersModal').classList.add('hidden'); }
 
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btn = document.getElementById('manageBtn');
+  if(btn){ btn.addEventListener('click', ()=>{ if(!WORKSPACE_ID) return alert('Open a workspace to manage members.'); openMembers(); }); }
+});
+
 async function listShares(){
-  if(!sessionJWT || !WORKSPACE_ID) return [];
+  if(!sessionJWT) return [];
   const url = apiUrl('shares') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
   const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
   if(!res.ok) { console.warn('listShares failed', await res.text()); return []; }
@@ -445,6 +382,7 @@ async function listShares(){
   const ownerRow = await fetch(apiUrl('workspaces') , { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}).then(r=>r.ok?r.json():{workspaces:[]}).catch(()=>({workspaces:[]}));
   const thisWs = (ownerRow.workspaces||[]).find(w=>w.id===WORKSPACE_ID);
   if(thisWs && thisWs.owner_id){
+    // if not owner, check shares
     if (thisWs.owner_id !== (JSON.parse(localStorage.getItem('stytch_auth')||'{}').user_id||'__')) {
       const share = (data.shares||[]).find(s=> (s.email||'').toLowerCase()===me && s.accepted_by_user_id);
       if(share) currentRole = (share.role||'editor');
@@ -456,12 +394,6 @@ async function postShare(email){
   const res = await fetch(apiUrl('shares'), { method:'POST', headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${sessionJWT}` }, body: JSON.stringify({ email, workspace_id: WORKSPACE_ID }) });
   return res;
 }
-async function resendShare(id){
-  try{
-    const r = await fetch(apiUrl(`shares/${id}/resend`), { method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
-    return r; // might be 404 on older worker
-  }catch(e){ return { ok:false, status:0, text: async()=>String(e) }; }
-}
 async function patchShare(id, role){
   const res = await fetch(apiUrl(`shares/${id}`), { method:'PATCH', headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${sessionJWT}` }, body: JSON.stringify({ role }) });
   return res;
@@ -471,62 +403,41 @@ async function deleteShare(id){
   return res;
 }
 
-function renderShareRow(s){
-  const row = document.createElement('div');
-  row.className = 'flex items-center justify-between py-3';
-  const who = document.createElement('div');
-  who.className = 'flex items-center gap-3';
-  const bubble = document.createElement('div');
-  bubble.className = 'h-8 w-8 rounded-full bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xs font-semibold';
-  bubble.textContent = (s.email || '?').slice(0,2).toUpperCase();
-  const meta = document.createElement('div');
-  meta.innerHTML = `<div class="text-sm font-medium">${s.email || '—'}</div>
-                    <div class="text-xs text-gray-500">${s.accepted_by_user_id ? 'Accepted' : 'Pending invite'} · invited ${new Date(s.invited_at||Date.now()).toLocaleDateString()}</div>`;
-  who.appendChild(bubble); who.appendChild(meta);
-
-  const actions = document.createElement('div');
-  actions.className = 'flex items-center gap-2';
-  const sel = document.createElement('select');
-  sel.className = 'text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800';
-  ['editor','viewer'].forEach(r=>{ const o=document.createElement('option'); o.value=r; o.text=r; if(String(s.role||'editor')===r) o.selected=true; sel.appendChild(o); });
-  sel.onchange = async ()=>{ const r = await patchShare(s.id, sel.value); if(!r.ok) alert('Failed to update role'); };
-
-  const copyBtn = document.createElement('button');
-  copyBtn.className = 'px-2 py-1 text-xs rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100';
-  copyBtn.textContent = 'Copy link';
-  copyBtn.onclick = async ()=>{
-    const r = await resendShare(s.id);
-    if(r.ok){
-      const data = await r.json().catch(()=>({}));
-      const link = data?.invite_link || null;
-      if(link){ try{ await navigator.clipboard.writeText(link);}catch{} alert('Invite link copied to clipboard.'); }
-      else alert('Resent invite. Check email.');
-    } else if (r.status === 404) {
-      alert('Server does not support Resend/copy for existing invites. Remove and re-invite to get a fresh link.');
-    } else {
-      const t = await r.text(); alert('Could not resend: ' + t);
-    }
-  };
-
-  const del = document.createElement('button');
-  del.className = 'px-2 py-1 text-xs rounded bg-red-50 text-red-600 hover:bg-red-100';
-  del.textContent = 'Remove';
-  del.onclick = async ()=>{ if(!confirm('Remove this member?')) return; const r = await deleteShare(s.id); if(r.ok) loadMembers(); else alert('Failed to remove'); };
-
-  actions.appendChild(sel);
-  actions.appendChild(copyBtn);
-  actions.appendChild(del);
-  row.appendChild(who); row.appendChild(actions);
-  return row;
-}
-
 async function loadMembers(){
   const list = document.getElementById('membersList');
   list.innerHTML = '<div class="py-6 text-sm text-gray-500">Loading…</div>';
   const shares = await listShares();
   if(!shares.length){ list.innerHTML = '<div class="py-6 text-sm text-gray-500">No members yet. Invite someone above.</div>'; return; }
   list.innerHTML = '';
-  shares.forEach(s => list.appendChild(renderShareRow(s)));
+  shares.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center justify-between py-3';
+    const who = document.createElement('div');
+    who.className = 'flex items-center gap-3';
+    const bubble = document.createElement('div');
+    bubble.className = 'h-8 w-8 rounded-full bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xs font-semibold';
+    bubble.textContent = (s.email || '?').slice(0,2).toUpperCase();
+    const meta = document.createElement('div');
+    meta.innerHTML = `<div class="text-sm font-medium">${s.email || '—'}</div>
+                      <div class="text-xs text-gray-500">${s.accepted_by_user_id ? 'Accepted' : 'Pending invite'} · invited ${new Date(s.invited_at||Date.now()).toLocaleDateString()}</div>`;
+    who.appendChild(bubble); who.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-2';
+    const sel = document.createElement('select');
+    sel.className = 'text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800';
+    ['editor','viewer'].forEach(r=>{ const o=document.createElement('option'); o.value=r; o.text=r; if(String(s.role||'editor')===r) o.selected=true; sel.appendChild(o); });
+    sel.onchange = async ()=>{ const r = await patchShare(s.id, sel.value); if(!r.ok) alert('Failed to update role'); };
+
+    const del = document.createElement('button');
+    del.className = 'px-2 py-1 text-xs rounded bg-red-50 text-red-600 hover:bg-red-100';
+    del.textContent = 'Remove';
+    del.onclick = async ()=>{ if(!confirm('Remove this member?')) return; const r = await deleteShare(s.id); if(r.ok) loadMembers(); else alert('Failed to remove'); };
+
+    actions.appendChild(sel); actions.appendChild(del);
+    row.appendChild(who); row.appendChild(actions);
+    list.appendChild(row);
+  });
 }
 
 async function inviteMember(){
@@ -535,20 +446,8 @@ async function inviteMember(){
   if(!email) return;
   if(!WORKSPACE_ID){ alert('No workspace selected.'); return; }
   const r = await postShare(email);
-  let body = null;
-  try{ body = await r.json(); }catch{ body = null; }
-  if(r.ok){
-    input.value=''; await loadMembers();
-    const link = body?.invite_link || null;
-    if(link){ try{ await navigator.clipboard.writeText(link);}catch{} alert(`Invitation created. Invite link copied to clipboard.\n\n${link}\n\n(Email also sent—check Spam/Promotions if needed.)`); }
-    else { alert('Invitation created. (Email sent)'); }
-  }
-  else {
-    const link = body?.invite_link || null;
-    const err = body?.error || await r.text();
-    if(link){ try{ await navigator.clipboard.writeText(link);}catch{} alert(`Invite email failed (${err}). Invite link copied:\n\n${link}`); }
-    else { alert('Invite failed: ' + err); }
-  }
+  if(r.ok){ input.value=''; loadMembers(); alert('Invitation created.'); }
+  else { const t = await r.text(); alert('Invite failed: ' + t); }
 }
 
 /*******************
@@ -589,7 +488,7 @@ function deleteTab(name){ if(!confirm(`Delete tab "${name}" and all its tasks?`)
  *******************/
 function switchTab(tabName){ if(!tabData[tabName]) return; activeTab = tabName; document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30')); const activeBtn = Array.from(document.querySelectorAll('.tab-button')).find(b => b.dataset.tab===tabName); if(activeBtn){ activeBtn.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'); } renderBoard(); }
 
-function ensureAtLeastOneTask(){ const cols = tabData[activeTab]; if(!cols) return; if((cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0)===0){ const id = `task-${Date.now()}-${Math.random().toString(36).slice(2,6)}`; cols.todo.push({ id, content:'', dueDate:'', priority:'Medium' }); } }
+function ensureAtLeastOneTask(){ const cols = tabData[activeTab]; if(!cols) return; if((cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0)===0){ const id = `task-${Date.now()}`; cols.todo.push({ id, content:'', dueDate:'', priority:'Medium' }); } }
 
 function renderBoard(){
   const columns = ['todo','inprogress','done'];
@@ -717,68 +616,47 @@ function removeTaskById(taskId){
 }
 function clearAllTasks(){ if(!activeTab) return; if(currentRole==='viewer') return; if(!confirm('Clear all tasks in this tab?')) return; tabData[activeTab] = { todo:[], inprogress:[], done:[] }; saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
 function addNewTask(){ if(currentRole==='viewer') return; if(!activeTab){ const def='Click to edit'; if(!tabData[def]) tabData[def]={ todo:[], inprogress:[], done:[] }; activeTab=def; renderTabs(); }
-  const id = `task-${Date.now()}-${Math.random().toString(36).slice(2,6)}`; const t = { id, content:'', dueDate:'', priority:'Medium' }; tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
+  const id = `task-${Date.now()}`; const t = { id, content:'', dueDate:'', priority:'Medium' }; tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
 
 /*******************
- *  EXPORT & REPORTS *
+ *  EXPORT          *
  *******************/
-function exportBoardAsPDF(){ const board = document.getElementById('board'); html2pdf().set({ margin:.5, filename:`Solara-Board-${WORKSPACE_NAME||WORKSPACE_ID||'Untitled'}.pdf`, image:{type:'jpeg',quality:.98}, html2canvas:{scale:2}, jsPDF:{unit:'in', format:'letter', orientation:'landscape'} }).from(board).save(); }
-function openReports(){ const ws = WORKSPACE_ID || localStorage.getItem('solara_last_ws') || ''; const u = new URL(location.origin + '/reports.html'); if(ws) u.searchParams.set('ws', ws); location.href = u.toString(); }
+function exportBoardAsPDF(){ const board = document.getElementById('board'); html2pdf().set({ margin:.5, filename:'Solara-Board.pdf', image:{type:'jpeg',quality:.98}, html2canvas:{scale:2}, jsPDF:{unit:'in', format:'letter', orientation:'landscape'} }).from(board).save(); }
 
 /*******************
- *  POLLING          *
+ *  BOOT            *
  *******************/
-async function pollCloud(){
-  if(!sessionJWT || !WORKSPACE_ID) return;
-  const before = JSON.stringify(tabData);
-  const ok = await loadTabsFromCloud();
-  if(ok){ const after = JSON.stringify(tabData); if (before !== after) { renderTabs(); renderBoard(); } }
+function maybeAttachLastWorkspace(){
+  const url = new URL(location.href);
+  if (url.searchParams.get('ws')) return;
+  const last = localStorage.getItem('solara_last_ws');
+  if (last){ url.searchParams.set('ws', last); history.replaceState(null,'',url.toString()); }
 }
 
-/*******************
- *  BOOT             *
- *******************/
-window.addEventListener('pagehide', () => { try { saveTabsToStorage(); } catch {} flushCloudNow(); if(pollTimer) clearInterval(pollTimer); });
+window.addEventListener('pagehide', () => { try { saveTabsToStorage(); } catch {} flushCloudNow(); });
 
 document.addEventListener('DOMContentLoaded', async () => {
-  hideBanner();
+  maybeAttachLastWorkspace();
+  const url = new URL(location.href);
+  WORKSPACE_ID = url.searchParams.get('ws') || '';
+  computeStorageNS();
+  if(!WORKSPACE_ID){ document.getElementById('wsBanner').classList.remove('hidden'); }
+
   const ok = await verifySessionAndHydrate();
   if(!ok) return requireReauth();
-  wireAuthButtons();
 
-  // Workspaces
-  await fetchWorkspaces();
-  const wsFromUrl = qsParam('ws');
-  const wsFromStorage = localStorage.getItem('solara_last_ws');
-  let target = null;
-  if(wsFromUrl && workspaces.find(w=>w.id===wsFromUrl)) target = wsFromUrl;
-  else if(wsFromUrl && !workspaces.find(w=>w.id===wsFromUrl)) { showBanner('You do not have access to this workspace id; showing your first workspace instead.','red'); }
-  if(!target) target = (workspaces[0]?.id) || wsFromStorage || '';
-  if(!target){ showBanner('No workspaces available. Ask an owner to invite you, or create one in the Workspaces page.'); }
-
-  // Set and render
-  if(target){ WORKSPACE_ID = target; WORKSPACE_NAME = (workspaces.find(w=>w.id===target)||{}).name||''; setQsParam('ws', target); localStorage.setItem('solara_last_ws', target); }
-  computeStorageNS();
   migrateLegacyIfNeeded();
 
-  // Local cache first for quick paint
   tabData = loadTabsFromStorage();
   if(Object.keys(tabData).length===0){ const def='Click to edit'; tabData[def] = { todo:[], inprogress:[], done:[] }; }
   activeTab = Object.keys(tabData)[0];
-  fillWorkspaceSelect();
-  updateWorkspaceCrumb();
   renderTabs();
-  renderBoard();
+  switchTab(activeTab);
 
-  // Cloud load & start polling
+  wireAuthButtons();
+
   const loaded = await loadTabsFromCloud();
-  if(loaded){ if(!tabData[activeTab]) activeTab = Object.keys(tabData)[0]||activeTab; renderTabs(); renderBoard(); }
-  pollTimer = setInterval(pollCloud, POLL_MS);
-
-  // Buttons
-  document.getElementById('reloadBtn').onclick = async ()=>{ hideBanner(); await loadTabsFromCloud(); renderTabs(); renderBoard(); };
-  const btn = document.getElementById('manageBtn');
-  if(btn){ btn.addEventListener('click', ()=>{ if(!WORKSPACE_ID) return alert('Open a workspace to manage members.'); openMembers(); }); }
+  if(loaded){ if(!tabData[activeTab]) activeTab = Object.keys(tabData)[0]||activeTab; renderTabs(); switchTab(activeTab); }
 });
 </script>
 </body>
