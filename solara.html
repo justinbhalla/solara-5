@@ -1,4 +1,9 @@
-
+<!--
+FILE: index.html (Solara board)
+Notes:
+• v9 front-end: multi-user merge sync (timestamps + read-merge-write), invite link surfaced, role-safe UI, accept-invite flow supported.
+• Requires Worker v8+ (tokenized invites, /shares/accept and invite_link return).
+-->
 <!DOCTYPE html>
 <html lang="en" class="h-full">
 <head>
@@ -43,7 +48,7 @@
         <span id="userName" class="text-sm font-medium">User</span>
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd"/></svg>
       </button>
-      <div id="userMenu" class="hidden absolute right-0 mt-2 w-56 rounded-xl menu-card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
+      <div id="userMenu" class="hidden absolute right-0 mt-2 w-64 rounded-xl menu-card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
         <div class="px-4 py-3 text-sm">
           <div id="userEmail" class="text-gray-600 dark:text-gray-300"></div>
         </div>
@@ -54,7 +59,7 @@
     </div>
   </header>
 
-  <!-- Nav: left = section tabs, right = actions (Trash + Plus aligned to the right) -->
+  <!-- Nav -->
   <nav class="flex items-center justify-between px-6 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-medium">
     <div class="flex items-center gap-6">
       <button class="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-semibold">
@@ -92,7 +97,7 @@
     </div>
   </main>
 
-  <!-- Bottom rail (tabs left + export right) -->
+  <!-- Bottom rail -->
   <div class="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 z-50">
     <div class="flex items-center justify-between px-6 py-3 overflow-x-auto">
       <div class="flex items-center gap-2 w-full overflow-x-auto px-1 py-1">
@@ -102,7 +107,6 @@
         </button>
       </div>
       <div class="flex items-center gap-1">
-        <!-- Members cogwheel -->
         <button id="manageBtn" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition" title="Manage members">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.57-.906 3.435.96 2.53 2.53a1.724 1.724 0 001.065 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.906 1.57-.96 3.435-2.53 2.53a1.724 1.724 0 00-2.573 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.57.906-3.435-.96-2.53-2.53A1.724 1.724 0 003.087 13.9c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.906-1.57.96-3.435 2.53-2.53.98.565 2.229.11 2.642-1.13zM12 9a3 3 0 110 6 3 3 0 010-6z"/></svg>
         </button>
@@ -129,6 +133,7 @@
         <button onclick="inviteMember()" class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 text-sm">Invite</button>
       </div>
       <div id="membersList" class="divide-y divide-gray-200 dark:divide-gray-700"></div>
+      <p id="inviteHint" class="text-xs text-gray-500 mt-3">We’ll also return a copyable invite link in case the email lands in Spam.</p>
     </div>
   </div>
 
@@ -180,6 +185,7 @@ function normalizeDateString(input){
   const tz = d.getTimezoneOffset()*60000;
   return new Date(d.getTime()-tz).toISOString().slice(0,10);
 }
+function nowIso(){ return new Date().toISOString(); }
 function loadTabsFromStorage(){
   try {
     const raw = localStorage.getItem(storageKey());
@@ -223,7 +229,7 @@ function migrateLegacyIfNeeded(){
   } catch {}
 }
 
-// Shape migration: ensure dueDate normalized and priority present
+// Shape migration v9: ensure dueDate normalized, priority present, updatedAt present
 function migrateTaskShapes(data){
   const out = JSON.parse(JSON.stringify(data||{}));
   Object.keys(out||{}).forEach(tab => {
@@ -232,7 +238,8 @@ function migrateTaskShapes(data){
         id: t.id || `task-${Date.now()}`,
         content: typeof t.content === 'string' ? t.content : '',
         dueDate: normalizeDateString(t.dueDate),
-        priority: ['High','Medium','Low'].includes(t.priority) ? t.priority : 'Medium'
+        priority: ['High','Medium','Low'].includes(t.priority) ? t.priority : 'Medium',
+        updatedAt: t.updatedAt || nowIso(),
       }));
     });
   });
@@ -240,16 +247,56 @@ function migrateTaskShapes(data){
 }
 
 /*******************
- *  CLOUD SYNC      *
+ *  CLOUD SYNC (v9) *
  *******************/
+function byId(arr){ const m=new Map(); (arr||[]).forEach(t=>m.set(t.id,t)); return m; }
+function mergeColumns(localCol=[], cloudCol=[]){
+  const L = byId(localCol), C = byId(cloudCol), out = new Map(L);
+  for (const [id, c] of C){
+    if (!out.has(id)) { out.set(id, c); continue; }
+    const l = out.get(id);
+    const newer = (l.updatedAt||'') > (c.updatedAt||'') ? l : c; // last-write-wins
+    out.set(id, newer);
+  }
+  const ordered = [];
+  cloudCol.forEach(t => { if(out.has(t.id)) ordered.push(out.get(t.id)); });
+  localCol.forEach(t => { if(!C.has(t.id)) ordered.push(out.get(t.id)); });
+  return ordered;
+}
+function mergeTabs(localTabs={}, cloudTabs={}){
+  const tabs = new Set([...Object.keys(localTabs||{}), ...Object.keys(cloudTabs||{})]);
+  const merged = {};
+  tabs.forEach(name => {
+    const L = localTabs[name] || { todo:[], inprogress:[], done:[] };
+    const C = cloudTabs[name] || { todo:[], inprogress:[], done:[] };
+    merged[name] = {
+      todo:       mergeColumns(L.todo,       C.todo),
+      inprogress: mergeColumns(L.inprogress, C.inprogress),
+      done:       mergeColumns(L.done,       C.done),
+    };
+  });
+  return merged;
+}
+
 const saveTabsToCloud = debounce(async ()=>{
   if(!sessionJWT || !WORKSPACE_ID) return;
   if(currentRole === 'viewer') return; // viewers cannot write
   try{
+    // 1) Read latest cloud
+    const getUrl = apiUrl('tasks') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
+    const got = await fetch(getUrl, { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
+    let cloudTabs = {};
+    if (got.ok) {
+      const json = await got.json().catch(()=>null);
+      if (json?.tabs) cloudTabs = migrateTaskShapes(json.tabs);
+    }
+    // 2) Merge (cloud wins on conflicts)
+    const merged = mergeTabs(tabData, cloudTabs);
+    // 3) Write back
     const res = await fetch(apiUrl('tasks'), {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionJWT}` },
-      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs: tabData }),
+      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs: merged }),
       keepalive: true,
     });
     if(res.status === 401){ console.warn('Cloud save unauthorized'); return; }
@@ -257,15 +304,25 @@ const saveTabsToCloud = debounce(async ()=>{
     if(!res.ok) console.warn('Cloud save failed', await res.text());
   }catch(err){ console.warn('Cloud save error', err); }
 }, 450);
+
 async function flushCloudNow(){
   if(!sessionJWT || !WORKSPACE_ID || currentRole==='viewer') return;
   try{
+    const getUrl = apiUrl('tasks') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
+    const got = await fetch(getUrl, { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
+    let cloudTabs = {};
+    if (got.ok) {
+      const json = await got.json().catch(()=>null);
+      if (json?.tabs) cloudTabs = migrateTaskShapes(json.tabs);
+    }
+    const merged = mergeTabs(tabData, cloudTabs);
     await fetch(apiUrl('tasks'), {
       method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionJWT}` },
-      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs: tabData }), keepalive: true,
+      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs: merged }), keepalive: true,
     });
   }catch{}
 }
+
 async function loadTabsFromCloud(){
   if(!sessionJWT || !WORKSPACE_ID) return false;
   try{
@@ -276,8 +333,7 @@ async function loadTabsFromCloud(){
     const data = await res.json();
     if(!data || !data.tabs) return false;
     const cloud = migrateTaskShapes(data.tabs);
-    const merged = { ...cloud, ...tabData };
-    tabData = merged;
+    tabData = mergeTabs(tabData, cloud); // cloud-preferred merge
     saveTabsToStorage();
     return true;
   }catch(err){ console.warn('Cloud load error', err); }
@@ -382,7 +438,6 @@ async function listShares(){
   const ownerRow = await fetch(apiUrl('workspaces') , { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}).then(r=>r.ok?r.json():{workspaces:[]}).catch(()=>({workspaces:[]}));
   const thisWs = (ownerRow.workspaces||[]).find(w=>w.id===WORKSPACE_ID);
   if(thisWs && thisWs.owner_id){
-    // if not owner, check shares
     if (thisWs.owner_id !== (JSON.parse(localStorage.getItem('stytch_auth')||'{}').user_id||'__')) {
       const share = (data.shares||[]).find(s=> (s.email||'').toLowerCase()===me && s.accepted_by_user_id);
       if(share) currentRole = (share.role||'editor');
@@ -446,8 +501,29 @@ async function inviteMember(){
   if(!email) return;
   if(!WORKSPACE_ID){ alert('No workspace selected.'); return; }
   const r = await postShare(email);
-  if(r.ok){ input.value=''; loadMembers(); alert('Invitation created.'); }
-  else { const t = await r.text(); alert('Invite failed: ' + t); }
+  const txt = await r.text();
+  let payload = null; try{ payload = JSON.parse(txt); }catch{}
+  if(r.ok){
+    input.value='';
+    loadMembers();
+    const inviteLink = payload?.invite_link;
+    if(inviteLink){
+      try{ await navigator.clipboard.writeText(inviteLink); }catch{}
+      alert(`Invitation created. Invite link copied to clipboard:\n\n${inviteLink}\n\n(Email sent — ask recipient to check Inbox/Spam.)`);
+    } else {
+      alert('Invitation created and email sent.');
+    }
+  }
+  else {
+    const inviteLink = payload?.invite_link;
+    const reason = payload?.error || txt || `HTTP ${r.status}`;
+    if(inviteLink){
+      try{ await navigator.clipboard.writeText(inviteLink); }catch{}
+      alert(`Invite email failed (${reason}). Invite link copied to clipboard:\n\n${inviteLink}`);
+    } else {
+      alert('Invite failed: ' + reason);
+    }
+  }
 }
 
 /*******************
@@ -488,7 +564,7 @@ function deleteTab(name){ if(!confirm(`Delete tab "${name}" and all its tasks?`)
  *******************/
 function switchTab(tabName){ if(!tabData[tabName]) return; activeTab = tabName; document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30')); const activeBtn = Array.from(document.querySelectorAll('.tab-button')).find(b => b.dataset.tab===tabName); if(activeBtn){ activeBtn.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'); } renderBoard(); }
 
-function ensureAtLeastOneTask(){ const cols = tabData[activeTab]; if(!cols) return; if((cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0)===0){ const id = `task-${Date.now()}`; cols.todo.push({ id, content:'', dueDate:'', priority:'Medium' }); } }
+function ensureAtLeastOneTask(){ const cols = tabData[activeTab]; if(!cols) return; if((cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0)===0){ const id = `task-${Date.now()}`; cols.todo.push({ id, content:'', dueDate:'', priority:'Medium', updatedAt: nowIso() }); } }
 
 function renderBoard(){
   const columns = ['todo','inprogress','done'];
@@ -593,6 +669,7 @@ function commitReorder(taskId, fromCol, toCol, insertIndex){
   if(insertIndex == null || insertIndex < 0) insertIndex = target.length;
   if(insertIndex > target.length) insertIndex = target.length;
   target.splice(insertIndex, 0, moved);
+  moved.updatedAt = nowIso();
   saveTabsToStorage();
   renderBoard();
   saveTabsToCloud();
@@ -604,6 +681,7 @@ function persistTaskEdits(taskId, patch){
   const cols = ['todo','inprogress','done'];
   for(const col of cols){ const list = tabData[activeTab][col]||[]; const idx = list.findIndex(t=>t.id===taskId); if(idx!==-1){
       if('dueDate' in patch) patch.dueDate = normalizeDateString(patch.dueDate);
+      patch.updatedAt = nowIso();
       Object.assign(list[idx], patch); break; } }
   saveTabsToStorage(); saveTabsToCloud();
 }
@@ -616,7 +694,7 @@ function removeTaskById(taskId){
 }
 function clearAllTasks(){ if(!activeTab) return; if(currentRole==='viewer') return; if(!confirm('Clear all tasks in this tab?')) return; tabData[activeTab] = { todo:[], inprogress:[], done:[] }; saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
 function addNewTask(){ if(currentRole==='viewer') return; if(!activeTab){ const def='Click to edit'; if(!tabData[def]) tabData[def]={ todo:[], inprogress:[], done:[] }; activeTab=def; renderTabs(); }
-  const id = `task-${Date.now()}`; const t = { id, content:'', dueDate:'', priority:'Medium' }; tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
+  const id = `task-${Date.now()}`; const t = { id, content:'', dueDate:'', priority:'Medium', updatedAt: nowIso() }; tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
 
 /*******************
  *  EXPORT          *
@@ -662,3 +740,133 @@ document.addEventListener('DOMContentLoaded', async () => {
 </body>
 </html>
 
+
+<!--
+FILE: accept-invite.html
+Purpose: Users land here from email link. Requires session; calls POST /shares/accept and redirects to workspace.
+-->
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Solara — Accept Invite</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root{ --accent:#4f46e5 }
+    html,body{height:100%}
+    body{font-family: ui-sans-serif, system-ui, -apple-system, "Inter", Segoe UI, Roboto, "Noto Sans", sans-serif}
+  </style>
+</head>
+<body class="h-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+  <main class="min-h-full flex items-center justify-center p-6">
+    <div class="w-full max-w-md">
+      <div id="card" class="rounded-2xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm bg-white dark:bg-gray-900">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="h-10 w-10 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center">🔷</div>
+          <div>
+            <h1 class="text-xl font-semibold">Accepting your Solara invite…</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Please wait a moment.</p>
+          </div>
+        </div>
+
+        <div id="status" class="text-sm text-gray-700 dark:text-gray-200">
+          Verifying…
+        </div>
+
+        <div id="actions" class="mt-6 hidden">
+          <button id="openBtn" class="w-full px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500">Open workspace</button>
+          <button id="retryBtn" class="mt-2 w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Try again</button>
+        </div>
+      </div>
+
+      <p class="text-xs text-gray-500 dark:text-gray-400 text-center mt-4">
+        If you get stuck, ask the inviter to resend the link.
+      </p>
+    </div>
+  </main>
+
+<script>
+const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev";
+const apiUrl = p => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
+
+function qs(k){ return new URL(location.href).searchParams.get(k) }
+function setStatus(html){ document.getElementById('status').innerHTML = html }
+function showActions(){ document.getElementById('actions').classList.remove('hidden') }
+function getSessionJWT(){
+  const m = document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : (localStorage.getItem('stytch_session_jwt') || localStorage.getItem('solara_session_jwt') || null);
+}
+function saveLastWS(ws){ try{ localStorage.setItem('solara_last_ws', ws) }catch{} }
+
+async function accept() {
+  const token = qs('token');
+  const ws = qs('ws');
+  if(!token){ setStatus(`<span class="text-red-600">Invalid link.</span> Missing token.`); showActions(); return; }
+  if(!ws){ setStatus(`<span class="text-red-600">Invalid link.</span> Missing workspace id.`); showActions(); return; }
+
+  let jwt = getSessionJWT();
+  if(!jwt){
+    const next = encodeURIComponent(location.href);
+    setStatus(`You need to sign in to accept this invite. Redirecting to sign-in…`);
+    location.replace(`/sign-in.html?next=${next}`);
+    return;
+  }
+
+  setStatus(`Verifying session…`);
+  try{
+    const r = await fetch(apiUrl('auth/check'), { headers:{ 'Authorization':`Bearer ${jwt}` } });
+    if(r.status === 401){ throw new Error('unauthorized') }
+  }catch{
+    const next = encodeURIComponent(location.href);
+    setStatus(`Session expired. Redirecting to sign-in…`);
+    location.replace(`/sign-in.html?next=${next}`);
+    return;
+  }
+
+  setStatus(`Accepting invite for workspace <code class="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800">${ws}</code>…`);
+
+  try{
+    const res = await fetch(apiUrl('shares/accept'), {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${jwt}` },
+      body: JSON.stringify({ token })
+    });
+    const body = await res.json().catch(()=>({}));
+
+    if(res.ok){
+      saveLastWS(ws);
+      setStatus(`<span class="text-green-600">Success.</span> Redirecting to your workspace…`);
+      setTimeout(()=> location.replace(`/workspace.html?ws=${encodeURIComponent(ws)}`), 600);
+      return;
+    }
+
+    if(res.status === 404){
+      setStatus(`<span class="text-red-600">This invite link is invalid or expired.</span><br/>Ask the workspace owner to resend a new invite.`);
+    } else if(res.status === 401){
+      const next = encodeURIComponent(location.href);
+      setStatus(`Your session is not valid. Redirecting to sign-in…`);
+      location.replace(`/sign-in.html?next=${next}`);
+      return;
+    } else {
+      setStatus(`<span class="text-red-600">Could not accept invite.</span><br/><code>${escapeHtml(JSON.stringify(body) || ('HTTP '+res.status))}</code>`);
+    }
+  } catch(err){
+    setStatus(`<span class="text-red-600">Network error.</span> ${escapeHtml(String(err))}`);
+  }
+  showActions();
+}
+
+function escapeHtml(s=''){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])) }
+
+document.getElementById('retryBtn').onclick = accept;
+document.getElementById('openBtn').onclick = ()=>{
+  const ws = qs('ws') || localStorage.getItem('solara_last_ws') || '';
+  if(ws) location.href = `/workspace.html?ws=${encodeURIComponent(ws)}`;
+  else location.href = `/workspace.html`;
+};
+
+document.addEventListener('DOMContentLoaded', accept);
+</script>
+</body>
+</html>
