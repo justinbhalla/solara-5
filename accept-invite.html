@@ -1,3 +1,10 @@
+<!-- =============================
+FILE: accept-invite.html (Solara v9 — complete)
+- Supports OLD worker (POST /shares/accept { workspace_id })
+- Also supports NEW worker (POST /shares/accept { token })
+- Handles missing session by redirecting with next=
+- Detects existing access and routes straight to workspace
+============================= -->
 <!DOCTYPE html>
 <html lang="en" class="h-full">
 <head>
@@ -9,6 +16,8 @@
     :root{ --accent:#4f46e5 }
     html,body{height:100%}
     body{font-family: ui-sans-serif, system-ui, -apple-system, "Inter", Segoe UI, Roboto, "Noto Sans", sans-serif}
+    .muted{color:#6b7280}
+    code.badge{background:#f3f4f6;border-radius:.375rem;padding:.125rem .375rem}
   </style>
 </head>
 <body class="h-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
@@ -18,13 +27,13 @@
         <div class="flex items-center gap-3 mb-4">
           <div class="h-10 w-10 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center">🔷</div>
           <div>
-            <h1 class="text-xl font-semibold">Accepting your Solara invite…</h1>
-            <p class="text-sm text-gray-500 dark:text-gray-400">Please wait a moment.</p>
+            <h1 class="text-xl font-semibold">Accept your Solara invite</h1>
+            <p class="text-sm muted">We’ll get you into the workspace in a moment.</p>
           </div>
         </div>
 
-        <div id="status" class="text-sm text-gray-700 dark:text-gray-200">
-          Verifying…
+        <div id="status" class="text-sm">
+          Starting…
         </div>
 
         <div id="actions" class="mt-6 hidden">
@@ -33,109 +42,147 @@
         </div>
       </div>
 
-      <p class="text-xs text-gray-500 dark:text-gray-400 text-center mt-4">
-        If you get stuck, ask the inviter to resend the link.
+      <p class="text-xs muted text-center mt-4">
+        If this keeps failing, ask the inviter to resend a fresh link or add your other email.
       </p>
     </div>
   </main>
 
 <script>
-/** CONFIG: match your Worker base **/
-const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev"; // same as app
-const apiUrl = p => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
+// ================= CONFIG =================
+const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev"; // Worker origin
+const apiUrl = p => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+,'');
 
-/** Helpers **/
-function qs(k){ return new URL(location.href).searchParams.get(k) }
-function setStatus(html){ document.getElementById('status').innerHTML = html }
-function showActions(){ document.getElementById('actions').classList.remove('hidden') }
+// ================ HELPERS =================
+const qs = k => new URL(location.href).searchParams.get(k);
+const setStatus = html => { document.getElementById('status').innerHTML = html };
+const showActions = ()=> document.getElementById('actions').classList.remove('hidden');
 function getSessionJWT(){
   const m = document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : (localStorage.getItem('stytch_session_jwt') || localStorage.getItem('solara_session_jwt') || null);
 }
 function saveLastWS(ws){ try{ localStorage.setItem('solara_last_ws', ws) }catch{} }
+function escapeHtml(s=''){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])) }
 
-/** Flow **/
-async function accept() {
-  const token = qs('token');
-  const ws = qs('ws');
-  if(!token){
-    setStatus(`<span class="text-red-600">Invalid link.</span> Missing token.`);
-    showActions(); return;
-  }
-  if(!ws){
-    setStatus(`<span class="text-red-600">Invalid link.</span> Missing workspace id.`);
-    showActions(); return;
-  }
-
-  // Ensure signed-in
+async function ensureSession(){
   let jwt = getSessionJWT();
   if(!jwt){
-    // send to sign-in with a return-to this page (so we can continue acceptance)
     const next = encodeURIComponent(location.href);
-    setStatus(`You need to sign in to accept this invite. Redirecting to sign-in…`);
-    // Adjust this path if your sign-in page lives elsewhere:
+    setStatus(`You need to sign in to accept this invite. Redirecting…`);
     location.replace(`/sign-in.html?next=${next}`);
-    return;
+    return null;
   }
-
-  setStatus(`Verifying session…`);
-  // Optional: quick auth check to refresh cached user data
   try{
     const r = await fetch(apiUrl('auth/check'), { headers:{ 'Authorization':`Bearer ${jwt}` } });
-    if(r.status === 401){ throw new Error('unauthorized') }
+    if(!r.ok) throw 0;
+    return jwt;
   }catch{
-    // stale/expired session → bounce to sign-in
     const next = encodeURIComponent(location.href);
     setStatus(`Session expired. Redirecting to sign-in…`);
     location.replace(`/sign-in.html?next=${next}`);
+    return null;
+  }
+}
+
+async function userAlreadyHasAccess(jwt, ws){
+  try{
+    const r = await fetch(apiUrl('workspaces'), { headers:{ 'Authorization':`Bearer ${jwt}` } });
+    if(!r.ok) return false;
+    const data = await r.json().catch(()=>({workspaces:[]}));
+    return !!(data.workspaces||[]).find(w => w.id === ws);
+  }catch{ return false }
+}
+
+async function acceptOldWorker(jwt, ws){
+  // Old worker expects { workspace_id }
+  const res = await fetch(apiUrl('shares/accept'), {
+    method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${jwt}` },
+    body: JSON.stringify({ workspace_id: ws })
+  });
+  return res;
+}
+async function acceptNewWorker(jwt, token){
+  // New worker expects { token } (and may ignore ws)
+  const res = await fetch(apiUrl('shares/accept'), {
+    method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${jwt}` },
+    body: JSON.stringify({ token })
+  });
+  return res;
+}
+
+async function main(){
+  setStatus('Reading link…');
+  const ws = qs('ws');
+  const token = qs('token');
+  if(!ws && !token){
+    setStatus(`<span class="text-red-600">Invalid link.</span> Missing <code class="badge">ws</code> or <code class="badge">token</code> parameter.`);
+    showActions();
     return;
   }
 
-  setStatus(`Accepting invite for workspace <code class="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800">${ws}</code>…`);
+  const jwt = await ensureSession();
+  if(!jwt) return; // redirected already
 
-  // Call accept endpoint
-  try{
-    const res = await fetch(apiUrl('shares/accept'), {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${jwt}` },
-      body: JSON.stringify({ token })
-    });
-    const body = await res.json().catch(()=>({}));
-
-    if(res.ok){
+  // If they already have access, skip accept
+  if(ws){
+    setStatus('Checking workspace access…');
+    if(await userAlreadyHasAccess(jwt, ws)){
       saveLastWS(ws);
-      setStatus(`<span class="text-green-600">Success.</span> Redirecting to your workspace…`);
-      setTimeout(()=> location.replace(`/workspace.html?ws=${encodeURIComponent(ws)}`), 600);
+      setStatus(`<span class="text-green-600">You already have access.</span> Opening workspace…`);
+      setTimeout(()=> location.replace(`/workspace.html?ws=${encodeURIComponent(ws)}`), 400);
       return;
     }
+  }
 
-    // Handle common errors
-    if(res.status === 404){
-      setStatus(`<span class="text-red-600">This invite link is invalid or expired.</span><br/>Ask the workspace owner to resend a new invite.`);
-    } else if(res.status === 401){
-      const next = encodeURIComponent(location.href);
-      setStatus(`Your session is not valid. Redirecting to sign-in…`);
-      location.replace(`/sign-in.html?next=${next}`);
-      return;
+  // Try to accept using whichever parameters we have
+  let res, body;
+  try{
+    if(token){
+      setStatus('Accepting invite (token)…');
+      res = await acceptNewWorker(jwt, token);
     } else {
-      setStatus(`<span class="text-red-600">Could not accept invite.</span><br/><code>${escapeHtml(JSON.stringify(body) || ('HTTP '+res.status))}</code>`);
+      setStatus('Accepting invite…');
+      res = await acceptOldWorker(jwt, ws);
     }
-  } catch(err){
+    body = await res.json().catch(()=>({}));
+  }catch(err){
     setStatus(`<span class="text-red-600">Network error.</span> ${escapeHtml(String(err))}`);
+    showActions();
+    return;
+  }
+
+  if(res.ok){
+    const destWs = ws || body?.workspace_id || qs('ws') || localStorage.getItem('solara_last_ws') || '';
+    if(destWs) saveLastWS(destWs);
+    setStatus(`<span class="text-green-600">Success.</span> Redirecting to your workspace…`);
+    setTimeout(()=> location.replace(destWs ? `/workspace.html?ws=${encodeURIComponent(destWs)}` : '/workspace.html'), 600);
+    return;
+  }
+
+  // Handle common errors cleanly
+  if(res.status === 404){
+    setStatus(`<span class="text-red-600">This invite is invalid or expired.</span><br/>Ask the workspace owner to resend a new invite link.`);
+  } else if(res.status === 401){
+    const next = encodeURIComponent(location.href);
+    setStatus(`Your session is not valid. Redirecting to sign-in…`);
+    location.replace(`/sign-in.html?next=${next}`);
+    return;
+  } else if(res.status === 400){
+    setStatus(`<span class="text-red-600">Bad request.</span><br/><code>${escapeHtml(JSON.stringify(body)||'400')}</code>`);
+  } else {
+    setStatus(`<span class="text-red-600">Could not accept invite.</span><br/><code>${escapeHtml(JSON.stringify(body)||('HTTP '+res.status))}</code>`);
   }
   showActions();
 }
 
-function escapeHtml(s=''){ return String(s).replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])) }
-
-document.getElementById('retryBtn').onclick = accept;
+document.getElementById('retryBtn').onclick = main;
 document.getElementById('openBtn').onclick = ()=>{
   const ws = qs('ws') || localStorage.getItem('solara_last_ws') || '';
   if(ws) location.href = `/workspace.html?ws=${encodeURIComponent(ws)}`;
   else location.href = `/workspace.html`;
 };
 
-document.addEventListener('DOMContentLoaded', accept);
+document.addEventListener('DOMContentLoaded', main);
 </script>
 </body>
 </html>
