@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Solara — Accept Invite</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root{ --accent:#4f46e5 }
+    html,body{height:100%}
+    body{font-family: ui-sans-serif, system-ui, -apple-system, "Inter", Segoe UI, Roboto, "Noto Sans", sans-serif}
+  </style>
+</head>
+<body class="h-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+  <main class="min-h-full flex items-center justify-center p-6">
+    <div class="w-full max-w-md">
+      <div id="card" class="rounded-2xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm bg-white dark:bg-gray-900">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="h-10 w-10 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center">🔷</div>
+          <div>
+            <h1 class="text-xl font-semibold">Accepting your Solara invite…</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Please wait a moment.</p>
+          </div>
+        </div>
+
+        <div id="status" class="text-sm text-gray-700 dark:text-gray-200">
+          Verifying…
+        </div>
+
+        <div id="actions" class="mt-6 hidden">
+          <button id="openBtn" class="w-full px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500">Open workspace</button>
+          <button id="retryBtn" class="mt-2 w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Try again</button>
+        </div>
+      </div>
+
+      <p class="text-xs text-gray-500 dark:text-gray-400 text-center mt-4">
+        If you get stuck, ask the inviter to resend the link.
+      </p>
+    </div>
+  </main>
+
+<script>
+/** CONFIG: match your Worker base **/
+const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev"; // same as app
+const apiUrl = p => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
+
+/** Helpers **/
+function qs(k){ return new URL(location.href).searchParams.get(k) }
+function setStatus(html){ document.getElementById('status').innerHTML = html }
+function showActions(){ document.getElementById('actions').classList.remove('hidden') }
+function getSessionJWT(){
+  const m = document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : (localStorage.getItem('stytch_session_jwt') || localStorage.getItem('solara_session_jwt') || null);
+}
+function saveLastWS(ws){ try{ localStorage.setItem('solara_last_ws', ws) }catch{} }
+
+/** Flow **/
+async function accept() {
+  const token = qs('token');
+  const ws = qs('ws');
+  if(!token){
+    setStatus(`<span class="text-red-600">Invalid link.</span> Missing token.`);
+    showActions(); return;
+  }
+  if(!ws){
+    setStatus(`<span class="text-red-600">Invalid link.</span> Missing workspace id.`);
+    showActions(); return;
+  }
+
+  // Ensure signed-in
+  let jwt = getSessionJWT();
+  if(!jwt){
+    // send to sign-in with a return-to this page (so we can continue acceptance)
+    const next = encodeURIComponent(location.href);
+    setStatus(`You need to sign in to accept this invite. Redirecting to sign-in…`);
+    // Adjust this path if your sign-in page lives elsewhere:
+    location.replace(`/sign-in.html?next=${next}`);
+    return;
+  }
+
+  setStatus(`Verifying session…`);
+  // Optional: quick auth check to refresh cached user data
+  try{
+    const r = await fetch(apiUrl('auth/check'), { headers:{ 'Authorization':`Bearer ${jwt}` } });
+    if(r.status === 401){ throw new Error('unauthorized') }
+  }catch{
+    // stale/expired session → bounce to sign-in
+    const next = encodeURIComponent(location.href);
+    setStatus(`Session expired. Redirecting to sign-in…`);
+    location.replace(`/sign-in.html?next=${next}`);
+    return;
+  }
+
+  setStatus(`Accepting invite for workspace <code class="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800">${ws}</code>…`);
+
+  // Call accept endpoint
+  try{
+    const res = await fetch(apiUrl('shares/accept'), {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${jwt}` },
+      body: JSON.stringify({ token })
+    });
+    const body = await res.json().catch(()=>({}));
+
+    if(res.ok){
+      saveLastWS(ws);
+      setStatus(`<span class="text-green-600">Success.</span> Redirecting to your workspace…`);
+      setTimeout(()=> location.replace(`/workspace.html?ws=${encodeURIComponent(ws)}`), 600);
+      return;
+    }
+
+    // Handle common errors
+    if(res.status === 404){
+      setStatus(`<span class="text-red-600">This invite link is invalid or expired.</span><br/>Ask the workspace owner to resend a new invite.`);
+    } else if(res.status === 401){
+      const next = encodeURIComponent(location.href);
+      setStatus(`Your session is not valid. Redirecting to sign-in…`);
+      location.replace(`/sign-in.html?next=${next}`);
+      return;
+    } else {
+      setStatus(`<span class="text-red-600">Could not accept invite.</span><br/><code>${escapeHtml(JSON.stringify(body) || ('HTTP '+res.status))}</code>`);
+    }
+  } catch(err){
+    setStatus(`<span class="text-red-600">Network error.</span> ${escapeHtml(String(err))}`);
+  }
+  showActions();
+}
+
+function escapeHtml(s=''){ return String(s).replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])) }
+
+document.getElementById('retryBtn').onclick = accept;
+document.getElementById('openBtn').onclick = ()=>{
+  const ws = qs('ws') || localStorage.getItem('solara_last_ws') || '';
+  if(ws) location.href = `/workspace.html?ws=${encodeURIComponent(ws)}`;
+  else location.href = `/workspace.html`;
+};
+
+document.addEventListener('DOMContentLoaded', accept);
+</script>
+</body>
+</html>
