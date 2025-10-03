@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en" class="h-full">
 <head>
@@ -17,6 +16,7 @@
     .drop-indicator { height: .5rem; border-radius: .25rem; background: rgba(99,102,241,.45); margin: .25rem 0; display: none; }
     .show-drop .drop-indicator { display: block; }
     .date-badge { font-variant-numeric: tabular-nums; }
+    .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
   </style>
 </head>
 <body class="flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
@@ -29,27 +29,30 @@
   <!-- Header -->
   <header class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
     <div class="flex items-center gap-3">
-      <a href="workspace.html" class="w-9 h-9 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center hover:bg-indigo-600/20" title="Back to Workspaces">🔷</a>
+      <a id="workspacesLink" href="workspace.html" class="w-9 h-9 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center hover:bg-indigo-600/20" title="Back to Workspaces">🔷</a>
       <div>
         <h1 class="text-3xl font-bold tracking-tight">Solara</h1>
         <p class="text-sm text-gray-500 dark:text-gray-400">Part of the ZLG Product Suite</p>
       </div>
     </div>
 
-    <!-- Signed-in user -->
-    <div id="userArea" class="relative">
-      <button id="userButton" class="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-        <span id="avatar" class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-semibold">?</span>
-        <span id="userName" class="text-sm font-medium">User</span>
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd"/></svg>
-      </button>
-      <div id="userMenu" class="hidden absolute right-0 mt-2 w-56 rounded-xl menu-card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
-        <div class="px-4 py-3 text-sm">
-          <div id="userEmail" class="text-gray-600 dark:text-gray-300"></div>
+    <div class="flex items-center gap-3">
+      <span id="syncBadge" class="pill text-gray-600 border-gray-300 dark:text-gray-300 dark:border-gray-600">—</span>
+      <!-- Signed-in user -->
+      <div id="userArea" class="relative">
+        <button id="userButton" class="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+          <span id="avatar" class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-semibold">?</span>
+          <span id="userName" class="text-sm font-medium">User</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd"/></svg>
+        </button>
+        <div id="userMenu" class="hidden absolute right-0 mt-2 w-56 rounded-xl menu-card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
+          <div class="px-4 py-3 text-sm">
+            <div id="userEmail" class="text-gray-600 dark:text-gray-300"></div>
+          </div>
+          <div class="border-t border-gray-100 dark:border-gray-700"></div>
+          <button id="addUserBtn" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Add user…</button>
+          <button id="signOutBtn" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">Sign out</button>
         </div>
-        <div class="border-t border-gray-100 dark:border-gray-700"></div>
-        <button id="addUserBtn" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Add user…</button>
-        <button id="signOutBtn" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">Sign out</button>
       </div>
     </div>
   </header>
@@ -61,7 +64,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3h14v2H3V3zm0 4h9v2H3V7zm0 4h14v2H3v-2zm0 4h9v2H3v-2z"/></svg>
         <span>Tasks</span>
       </button>
-      <button onclick="window.location.href='reports.html'" class="flex items-center gap-2 text-gray-700 dark:text-gray-200 hover:text-indigo-600">
+      <button id="reportsLink" class="flex items-center gap-2 text-gray-700 dark:text-gray-200 hover:text-indigo-600">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 16v-4m4 4V8m4 8V5"/></svg>
         <span>Reports</span>
       </button>
@@ -102,7 +105,6 @@
         </button>
       </div>
       <div class="flex items-center gap-1">
-        <!-- Members cogwheel -->
         <button id="manageBtn" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition" title="Manage members">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.57-.906 3.435.96 2.53 2.53a1.724 1.724 0 001.065 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.906 1.57-.96 3.435-2.53 2.53a1.724 1.724 0 00-2.573 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.57.906-3.435-.96-2.53-2.53A1.724 1.724 0 003.087 13.9c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.906-1.57.96-3.435 2.53-2.53.98.565 2.229.11 2.642-1.13zM12 9a3 3 0 110 6 3 3 0 010-6z"/></svg>
         </button>
@@ -138,24 +140,33 @@
  *************************/
 const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev"; // Worker origin
 const apiUrl = (p) => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
+const SYNC_POLL_MS = 3000; // live poll interval
+const SAVE_DEBOUNCE_MS = 500; // local save debounce
 
 /**************
  *  STATE     *
  **************/
 let WORKSPACE_ID = '';
 let activeTab = null;
-let tabData = {};
+let tabData = {};            // LOCAL (what UI shows)
+let BASE = {};               // last server snapshot we merged against
+let lastRemoteHash = '';     // hash of last cloud payload
+let saving = false;
+let dirty = false;
+let pollTimer = null;
+
 let sessionJWT = null;
 let authedUser = null; // { name:{first_name,last_name}, email_addresses:[{email_address}] }
 let currentUserKey = null; // user_id or email for namespacing
 let dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null };
 let STORAGE_NS = null; // stable localStorage namespace
-let currentRole = 'owner'; // 'owner' | 'editor' | 'viewer' (determined after load)
+let currentRole = 'owner'; // 'owner' | 'editor' | 'viewer'
 
 /*******************
  *  UTILITIES       *
  *******************/
 const debounce = (fn, ms = 600) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+const sleep = (ms)=> new Promise(r=>setTimeout(r,ms));
 function getSessionJWT(){
   const m = document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : (localStorage.getItem('stytch_session_jwt') || localStorage.getItem('solara_session_jwt') || null);
@@ -180,18 +191,6 @@ function normalizeDateString(input){
   const tz = d.getTimezoneOffset()*60000;
   return new Date(d.getTime()-tz).toISOString().slice(0,10);
 }
-function loadTabsFromStorage(){
-  try {
-    const raw = localStorage.getItem(storageKey());
-    const parsed = raw ? JSON.parse(raw) : {};
-    return migrateTaskShapes(parsed);
-  } catch { return {}; }
-}
-function saveTabsToStorage(){
-  const key = storageKey();
-  const json = JSON.stringify(tabData);
-  try{ localStorage.setItem(key, json); localStorage.setItem('solara_tabs_backup', json); }catch(e){ console.warn('Local save failed, writing backup', e); try{ localStorage.setItem('solara_tabs_backup', json); }catch{} }
-}
 function initialsFor(user){
   const full = ((user?.name?.first_name||'') + ' ' + (user?.name?.last_name||'')).trim();
   const fromName = full.split(/\s+/).filter(Boolean).slice(0,2).map(s=>s[0]).join('');
@@ -204,84 +203,246 @@ function displayNameFor(user){
   if (parts.length) return parts.join(' ');
   return user?.email_addresses?.[0]?.email_address || initialsFor(user);
 }
-
-/*******************
- *  LEGACY MIGRATION *
- *******************/
-function migrateLegacyIfNeeded(){
-  const newKey = storageKey();
-  const existing = localStorage.getItem(newKey);
-  if (existing) return; // already has namespaced data
-  const legacy = localStorage.getItem('solara-tabs'); // old global key
-  if (!legacy) return;
-  try {
-    const parsed = JSON.parse(legacy);
-    if (parsed && typeof parsed === 'object') {
-      localStorage.setItem(newKey, JSON.stringify(parsed));
-      console.info('[Solara] Migrated legacy tabs →', newKey);
-    }
-  } catch {}
+function hash(obj){
+  try{ return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))).slice(0,64); }catch{ return Math.random().toString(36).slice(2); }
 }
 
-// Shape migration: ensure dueDate normalized and priority present
+/*******************
+ *  SHAPE & MERGE   *
+ *******************/
+const COLS = ['todo','inprogress','done'];
 function migrateTaskShapes(data){
   const out = JSON.parse(JSON.stringify(data||{}));
   Object.keys(out||{}).forEach(tab => {
-    ['todo','inprogress','done'].forEach(col => {
+    COLS.forEach((col,idx) => {
+      let posCounter = 1;
       out[tab][col] = (out[tab][col]||[]).map(t => ({
-        id: t.id || `task-${Date.now()}`,
+        id: t.id || `task-${cryptoRandom()}`,
         content: typeof t.content === 'string' ? t.content : '',
         dueDate: normalizeDateString(t.dueDate),
-        priority: ['High','Medium','Low'].includes(t.priority) ? t.priority : 'Medium'
+        priority: ['High','Medium','Low'].includes(t.priority) ? t.priority : 'Medium',
+        pos: isFinite(Number(t.pos)) ? Number(t.pos) : posCounter++,
+        upd: isFinite(Number(t.upd)) ? Number(t.upd) : Date.now(),
+        by: t.by || (currentUserKey || 'unknown')
       }));
     });
   });
   return out;
 }
+function cryptoRandom(){ try{ return crypto.randomUUID(); }catch{ return Math.random().toString(36).slice(2); } }
+function indexTabs(tabs){
+  const map = new Map(); // id -> {task, tab, col}
+  Object.keys(tabs||{}).forEach(tab => {
+    COLS.forEach(col => {
+      (tabs[tab]?.[col]||[]).forEach(task => {
+        map.set(task.id, { task, tab, col });
+      });
+    });
+  });
+  return map;
+}
+function clone(obj){ return JSON.parse(JSON.stringify(obj||{})); }
+function ensureTab(tabs, name){ if(!tabs[name]) tabs[name] = { todo:[], inprogress:[], done:[] }; return tabs[name]; }
+function sortCols(tabs){
+  Object.keys(tabs||{}).forEach(tab => {
+    COLS.forEach(col => { tabs[tab][col].sort((a,b)=> (a.pos||0)-(b.pos||0) || (a.upd||0)-(b.upd||0) ); });
+  });
+}
+function newPosBetween(prev, next){
+  const A = isFinite(prev) ? Number(prev) : 0;
+  const B = isFinite(next) ? Number(next) : A + 2;
+  if (B - A > 1e-6) return A + (B-A)/2;
+  // Reindex pathologically close lists: assign integers
+  // Caller should reindex the whole column if this triggers
+  return A + 0.000001;
+}
+function reindexColumn(list){ list.forEach((t,i)=> t.pos = i+1); }
+
+// 3-way merge of tabs: BASE vs LOCAL vs REMOTE
+function mergeTabs(BASE0, LOCAL0, REMOTE0){
+  const BASE = clone(migrateTaskShapes(BASE0||{}));
+  const LOCAL = clone(migrateTaskShapes(LOCAL0||{}));
+  const REMOTE = clone(migrateTaskShapes(REMOTE0||{}));
+
+  const baseIdx = indexTabs(BASE);
+  const locIdx  = indexTabs(LOCAL);
+  const remIdx  = indexTabs(REMOTE);
+
+  const out = clone(BASE);
+  // Ensure all tabs exist in output
+  new Set([ ...Object.keys(LOCAL||{}), ...Object.keys(REMOTE||{}), ...Object.keys(BASE||{}) ]).forEach(tab => ensureTab(out, tab));
+
+  // Gather all task IDs
+  const ids = new Set([ ...baseIdx.keys(), ...locIdx.keys(), ...remIdx.keys() ]);
+
+  // Helper to place task in a tab/col with pos
+  function placeTask(t, tab, col, posHint){
+    ensureTab(out, tab);
+    const list = out[tab][col];
+    // if exists in list, replace
+    const i = list.findIndex(x=>x.id===t.id);
+    if(i !== -1){ list[i] = t; }
+    else { list.push(t); }
+    if (isFinite(posHint)) t.pos = posHint;
+  }
+  function removeTask(id){
+    Object.keys(out).forEach(tab => COLS.forEach(col => {
+      const list = out[tab][col]; const i = list.findIndex(x=>x.id===id); if(i!==-1) list.splice(i,1);
+    }));
+  }
+  function locationOf(idx, id){
+    const row = idx.get(id);
+    return row ? { tab: row.tab, col: row.col, task: row.task } : null;
+  }
+
+  ids.forEach(id => {
+    const b = locationOf(baseIdx, id);
+    const l = locationOf(locIdx,  id);
+    const r = locationOf(remIdx,  id);
+
+    // Deletions: if present in BASE, missing in LOCAL/REMOTE → treat as deleted where newer upd wins
+    const bTask = b?.task; const lTask = l?.task; const rTask = r?.task;
+
+    // If missing in both LOCAL and REMOTE -> drop
+    if(!lTask && !rTask){ removeTask(id); return; }
+
+    // If only in LOCAL -> take LOCAL (added by me)
+    if(lTask && !rTask){ placeTask(lTask, l.tab, l.col, lTask.pos); return; }
+    // If only in REMOTE -> take REMOTE (added by others)
+    if(rTask && !lTask){ placeTask(rTask, r.tab, r.col, rTask.pos); return; }
+
+    // Both exist: resolve field-by-field by upd (last writer wins)
+    const newer = (a,b)=> (a?.upd||0) >= (b?.upd||0) ? a : b;
+    const winner = newer(lTask, rTask);
+
+    // Column/tab move conflicts: prefer side with newer upd; else prefer LOCAL
+    let tab = l.tab, col = l.col, pos = lTask.pos;
+    if(l.tab!==r.tab || l.col!==r.col){
+      if((lTask.upd||0) === (rTask.upd||0)) { tab = l.tab; col = l.col; pos = lTask.pos; }
+      else if((lTask.upd||0) > (rTask.upd||0)) { tab = l.tab; col = l.col; pos = lTask.pos; }
+      else { tab = r.tab; col = r.col; pos = rTask.pos; }
+    }
+
+    // Merge fields
+    const merged = { ...bTask, ...rTask, ...lTask };
+    // Ensure we keep the newest primitive fields explicitly
+    ['content','dueDate','priority','pos','upd','by'].forEach(k=>{
+      if (lTask && rTask){ merged[k] = (lTask.upd||0) >= (rTask.upd||0) ? lTask[k] : rTask[k]; }
+      else if (lTask){ merged[k] = lTask[k]; }
+      else if (rTask){ merged[k] = rTask[k]; }
+    });
+
+    placeTask(merged, tab, col, pos);
+  });
+
+  // Clean: remove empty tabs that don't exist in either LOCAL/REMOTE
+  Object.keys(out).forEach(tab => {
+    if(!(LOCAL[tab] || REMOTE[tab])) delete out[tab];
+  });
+
+  // Sort columns by pos
+  sortCols(out);
+  // Reindex tight columns
+  Object.keys(out).forEach(tab => COLS.forEach(col => reindexColumn(out[tab][col])));
+
+  return out;
+}
+
+/*******************
+ *  LOCAL STORAGE   *
+ *******************/
+function loadTabsFromStorage(){
+  try {
+    const raw = localStorage.getItem(storageKey());
+    const parsed = raw ? JSON.parse(raw) : {};
+    return migrateTaskShapes(parsed);
+  } catch { return {}; }
+}
+function saveTabsToStorage(){
+  const key = storageKey();
+  const json = JSON.stringify(tabData);
+  try{ localStorage.setItem(key, json); localStorage.setItem('solara_tabs_backup', json); }catch(e){ console.warn('Local save failed, writing backup', e); try{ localStorage.setItem('solara_tabs_backup', json); }catch{} }
+}
 
 /*******************
  *  CLOUD SYNC      *
  *******************/
-const saveTabsToCloud = debounce(async ()=>{
-  if(!sessionJWT || !WORKSPACE_ID) return;
-  if(currentRole === 'viewer') return; // viewers cannot write
-  try{
-    const res = await fetch(apiUrl('tasks'), {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionJWT}` },
-      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs: tabData }),
-      keepalive: true,
-    });
-    if(res.status === 401){ console.warn('Cloud save unauthorized'); return; }
-    if(res.status === 403){ console.warn('Viewer cannot write'); return; }
-    if(!res.ok) console.warn('Cloud save failed', await res.text());
-  }catch(err){ console.warn('Cloud save error', err); }
-}, 450);
-async function flushCloudNow(){
-  if(!sessionJWT || !WORKSPACE_ID || currentRole==='viewer') return;
-  try{
-    await fetch(apiUrl('tasks'), {
-      method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionJWT}` },
-      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs: tabData }), keepalive: true,
-    });
-  }catch{}
-}
-async function loadTabsFromCloud(){
-  if(!sessionJWT || !WORKSPACE_ID) return false;
+const setSyncBadge = (state)=>{
+  const el = document.getElementById('syncBadge');
+  if(!el) return;
+  if(state==='syncing'){ el.textContent = '● Syncing…'; el.className = 'pill text-indigo-700 border-indigo-300 dark:text-indigo-300 dark:border-indigo-500'; }
+  else if(state==='offline'){ el.textContent = '● Offline'; el.className = 'pill text-amber-700 border-amber-300 dark:text-amber-300 dark:border-amber-500'; }
+  else { el.textContent = '● Synced'; el.className = 'pill text-emerald-700 border-emerald-300 dark:text-emerald-300 dark:border-emerald-500'; }
+};
+
+async function fetchCloudTabs(){
+  if(!sessionJWT || !WORKSPACE_ID) return null;
   try{
     const url = apiUrl('tasks') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
     const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
-    if(res.status === 401) return false;
-    if(!res.ok) return false;
+    if(!res.ok){ if(res.status===401) setSyncBadge('offline'); return null; }
     const data = await res.json();
-    if(!data || !data.tabs) return false;
-    const cloud = migrateTaskShapes(data.tabs);
-    const merged = { ...cloud, ...tabData };
+    return data?.tabs || {};
+  }catch(err){ setSyncBadge('offline'); return null; }
+}
+
+async function postCloudTabs(tabs){
+  if(!sessionJWT || !WORKSPACE_ID) return false;
+  try{
+    const res = await fetch(apiUrl('tasks'), {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionJWT}` },
+      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs })
+    });
+    return res.ok;
+  }catch(err){ return false; }
+}
+
+const saveTabsToCloud = debounce(async ()=>{
+  if(!sessionJWT || !WORKSPACE_ID) return;
+  if(currentRole==='viewer') return;
+  dirty = true; // mark dirty until round-trip completes
+  await syncMergeAndSave('push');
+}, SAVE_DEBOUNCE_MS);
+
+async function syncMergeAndSave(mode){
+  // mode: 'push' (local edits) or 'pull' (poll refresh)
+  if(saving) return; // avoid overlapping
+  saving = true; setSyncBadge('syncing');
+  try{
+    const REMOTE = await fetchCloudTabs();
+    if(REMOTE==null){ setSyncBadge('offline'); return; }
+
+    // First launch init for BASE
+    if(Object.keys(BASE).length===0) BASE = clone(REMOTE);
+
+    // 3-way merge
+    const merged = mergeTabs(BASE, tabData, REMOTE);
+
+    // If mode is 'push' and role allows, write merged to server
+    if(mode==='push' && currentRole!=='viewer'){
+      const ok = await postCloudTabs(merged);
+      if(!ok){ console.warn('Cloud save failed'); setSyncBadge('offline'); return; }
+    }
+
+    // Adopt merged as both LOCAL and BASE; update view if changed
+    const before = hash(tabData);
     tabData = merged;
+    BASE = clone(merged);
     saveTabsToStorage();
-    return true;
-  }catch(err){ console.warn('Cloud load error', err); }
-  return false;
+    const after = hash(tabData);
+    if(before!==after) renderTabs(), switchTab(activeTab);
+    dirty = false; setSyncBadge('synced');
+  } finally { saving = false; }
+}
+
+function startPoller(){
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(()=> syncMergeAndSave('pull').catch(()=>{}), SYNC_POLL_MS);
+}
+
+async function flushCloudNow(){
+  if(!sessionJWT || !WORKSPACE_ID || currentRole==='viewer') return;
+  await syncMergeAndSave('push');
 }
 
 /*******************
@@ -382,7 +543,6 @@ async function listShares(){
   const ownerRow = await fetch(apiUrl('workspaces') , { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}).then(r=>r.ok?r.json():{workspaces:[]}).catch(()=>({workspaces:[]}));
   const thisWs = (ownerRow.workspaces||[]).find(w=>w.id===WORKSPACE_ID);
   if(thisWs && thisWs.owner_id){
-    // if not owner, check shares
     if (thisWs.owner_id !== (JSON.parse(localStorage.getItem('stytch_auth')||'{}').user_id||'__')) {
       const share = (data.shares||[]).find(s=> (s.email||'').toLowerCase()===me && s.accepted_by_user_id);
       if(share) currentRole = (share.role||'editor');
@@ -451,7 +611,7 @@ async function inviteMember(){
 }
 
 /*******************
- *  TABS            *
+ *  TABS + UI       *
  *******************/
 function renderTabs(){
   const tabsContainer = document.getElementById('tabs');
@@ -467,6 +627,7 @@ function renderTabs(){
     tabBtn.ondblclick = () => {
       const newName = prompt('Rename tab:', name);
       if (!newName || !newName.trim() || newName === name || tabData[newName]) return;
+      // Move data and stamp update times to avoid conflicts
       tabData[newName] = tabData[name];
       delete tabData[name];
       if (activeTab === name) activeTab = newName;
@@ -483,15 +644,12 @@ function promptNewTab(){ const name = prompt('Enter tab name:'); if(!name || !na
 function addTab(name){ if(tabData[name]) return switchTab(name); tabData[name] = { todo:[], inprogress:[], done:[] }; saveTabsToStorage(); renderTabs(); switchTab(name); saveTabsToCloud(); }
 function deleteTab(name){ if(!confirm(`Delete tab "${name}" and all its tasks?`)) return; delete tabData[name]; if(activeTab===name) activeTab = Object.keys(tabData)[0]||null; saveTabsToStorage(); renderTabs(); renderBoard(); saveTabsToCloud(); }
 
-/*******************
- *  BOARD LOGIC     *
- *******************/
 function switchTab(tabName){ if(!tabData[tabName]) return; activeTab = tabName; document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30')); const activeBtn = Array.from(document.querySelectorAll('.tab-button')).find(b => b.dataset.tab===tabName); if(activeBtn){ activeBtn.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'); } renderBoard(); }
 
-function ensureAtLeastOneTask(){ const cols = tabData[activeTab]; if(!cols) return; if((cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0)===0){ const id = `task-${Date.now()}`; cols.todo.push({ id, content:'', dueDate:'', priority:'Medium' }); } }
+function ensureAtLeastOneTask(){ const cols = tabData[activeTab]; if(!cols) return; if((cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0)===0){ const id = `task-${cryptoRandom()}`; cols.todo.push({ id, content:'', dueDate:'', priority:'Medium', pos: 1, upd: Date.now(), by: currentUserKey }); } }
 
 function renderBoard(){
-  const columns = ['todo','inprogress','done'];
+  const columns = COLS;
   columns.forEach(col => {
     const colEl = document.getElementById(col);
     colEl.querySelectorAll('[data-task]')?.forEach(n => n.remove());
@@ -509,8 +667,7 @@ function renderBoard(){
     colEl.ondrop = (e)=>{
       e.preventDefault();
       colEl.classList.remove('drag-over','show-drop');
-      const id = dragContext.id;
-      if(!id) return;
+      const id = dragContext.id; if(!id) return;
       commitReorder(id, dragContext.fromCol, colEl.dataset.col, dragContext.insertIndex);
       clearDragContext();
     };
@@ -518,15 +675,15 @@ function renderBoard(){
   if(!activeTab || !tabData[activeTab]) return;
   ensureAtLeastOneTask();
   const data = tabData[activeTab];
-  ['todo','inprogress','done'].forEach(col => {
+  COLS.forEach(col => {
     const colEl = document.getElementById(col);
-    (data[col]||[]).forEach(t => { colEl.appendChild(createTaskElement(t.id, t.content, t.dueDate, t.priority, col)); });
+    (data[col]||[]).sort((a,b)=> (a.pos||0)-(b.pos||0)).forEach(t => { colEl.appendChild(createTaskElement(t.id, t.content, t.dueDate, t.priority, col, t.pos)); });
   });
 }
 
-function createTaskElement(id, content='', dueDate='', priority='Medium', column){
+function createTaskElement(id, content='', dueDate='', priority='Medium', column, pos){
   const wrapper = document.createElement('div');
-  wrapper.id = id; wrapper.setAttribute('data-task','1'); wrapper.draggable = true; wrapper.className = 'relative p-3 rounded bg-white dark:bg-gray-700 shadow cursor-move mb-2'; wrapper.setAttribute('data-column', column);
+  wrapper.id = id; wrapper.setAttribute('data-task','1'); wrapper.draggable = currentRole!=='viewer'; wrapper.className = 'relative p-3 rounded bg-white dark:bg-gray-700 shadow cursor-move mb-2'; wrapper.setAttribute('data-column', column);
 
   const editable = document.createElement('div'); editable.className = 'editable w-full font-medium mb-1'; editable.contentEditable = currentRole !== 'viewer'; editable.innerText = content;
   const placeholder = document.createElement('span'); placeholder.className = 'absolute left-3 top-3 text-sm text-gray-400 pointer-events-none'; placeholder.textContent = 'Click to edit...';
@@ -592,7 +749,17 @@ function commitReorder(taskId, fromCol, toCol, insertIndex){
   const target = cols[toCol] = cols[toCol]||[];
   if(insertIndex == null || insertIndex < 0) insertIndex = target.length;
   if(insertIndex > target.length) insertIndex = target.length;
+
+  // Compute new pos between neighbors
+  const prev = target[insertIndex-1]?.pos;
+  const next = target[insertIndex]?.pos;
+  let nextPos = newPosBetween(prev, next);
+  moved.pos = nextPos;
+  moved.upd = Date.now();
+  moved.by = currentUserKey;
   target.splice(insertIndex, 0, moved);
+  // Reindex if needed (too close)
+  if(!isFinite(prev) || !isFinite(next) || Math.abs((next||nextPos)-(prev||0)) < 1e-6){ reindexColumn(target); }
   saveTabsToStorage();
   renderBoard();
   saveTabsToCloud();
@@ -601,22 +768,24 @@ function commitReorder(taskId, fromCol, toCol, insertIndex){
 function persistTaskEdits(taskId, patch){
   if(!activeTab || !tabData[activeTab]) return;
   if(currentRole==='viewer') return;
-  const cols = ['todo','inprogress','done'];
+  const cols = COLS;
   for(const col of cols){ const list = tabData[activeTab][col]||[]; const idx = list.findIndex(t=>t.id===taskId); if(idx!==-1){
       if('dueDate' in patch) patch.dueDate = normalizeDateString(patch.dueDate);
-      Object.assign(list[idx], patch); break; } }
+      list[idx] = { ...list[idx], ...patch, upd: Date.now(), by: currentUserKey };
+      break; } }
   saveTabsToStorage(); saveTabsToCloud();
 }
 function removeTaskById(taskId){
   if(!activeTab || !tabData[activeTab]) return;
   if(currentRole==='viewer') return;
-  const cols = ['todo','inprogress','done'];
+  const cols = COLS;
   for(const col of cols){ const list = tabData[activeTab][col]||[]; const idx = list.findIndex(t=>t.id===taskId); if(idx!==-1){ list.splice(idx,1); break; } }
   saveTabsToStorage(); renderBoard(); saveTabsToCloud();
 }
 function clearAllTasks(){ if(!activeTab) return; if(currentRole==='viewer') return; if(!confirm('Clear all tasks in this tab?')) return; tabData[activeTab] = { todo:[], inprogress:[], done:[] }; saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
 function addNewTask(){ if(currentRole==='viewer') return; if(!activeTab){ const def='Click to edit'; if(!tabData[def]) tabData[def]={ todo:[], inprogress:[], done:[] }; activeTab=def; renderTabs(); }
-  const id = `task-${Date.now()}`; const t = { id, content:'', dueDate:'', priority:'Medium' }; tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
+  const id = `task-${cryptoRandom()}`; const now = Date.now(); const t = { id, content:'', dueDate:'', priority:'Medium', pos: (tabData[activeTab].todo.slice(-1)[0]?.pos||0)+1, upd: now, by: currentUserKey };
+  tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
 
 /*******************
  *  EXPORT          *
@@ -635,7 +804,14 @@ function maybeAttachLastWorkspace(){
 
 window.addEventListener('pagehide', () => { try { saveTabsToStorage(); } catch {} flushCloudNow(); });
 
-document.addEventListener('DOMContentLoaded', async () => {
+function setReportsHref(){
+  const btn = document.getElementById('reportsLink');
+  if(btn){ btn.onclick = () => { if(!WORKSPACE_ID){ alert('Open a workspace first.'); return; } location.href = `reports.html?ws=${encodeURIComponent(WORKSPACE_ID)}`; } }
+  const logo = document.getElementById('workspacesLink');
+  if(logo){ logo.href = `workspace.html`; }
+}
+
+async function initialLoad(){
   maybeAttachLastWorkspace();
   const url = new URL(location.href);
   WORKSPACE_ID = url.searchParams.get('ws') || '';
@@ -645,9 +821,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const ok = await verifySessionAndHydrate();
   if(!ok) return requireReauth();
 
-  migrateLegacyIfNeeded();
+  setReportsHref();
 
+  // Local bootstrap
   tabData = loadTabsFromStorage();
+  tabData = migrateTaskShapes(tabData);
   if(Object.keys(tabData).length===0){ const def='Click to edit'; tabData[def] = { todo:[], inprogress:[], done:[] }; }
   activeTab = Object.keys(tabData)[0];
   renderTabs();
@@ -655,9 +833,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   wireAuthButtons();
 
-  const loaded = await loadTabsFromCloud();
-  if(loaded){ if(!tabData[activeTab]) activeTab = Object.keys(tabData)[0]||activeTab; renderTabs(); switchTab(activeTab); }
-});
+  // Cloud bootstrap + start poller
+  const REMOTE = await fetchCloudTabs();
+  if(REMOTE){ BASE = clone(REMOTE); tabData = mergeTabs({}, tabData, REMOTE); saveTabsToStorage(); renderTabs(); switchTab(activeTab); setSyncBadge('synced'); }
+  else { setSyncBadge('offline'); }
+
+  startPoller();
+}
+
+document.addEventListener('DOMContentLoaded', initialLoad);
 </script>
 </body>
 </html>
