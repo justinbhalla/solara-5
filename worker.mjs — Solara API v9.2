@@ -1,0 +1,577 @@
+// worker.mjs — Solara API v9.2
+// Key fixes vs v8.0/9.0:
+// • Email matching is case-insensitive everywhere (LOWER(...))
+// • Normalize emails at ingest (verifySession, upsertUser, invites, accept)
+// • Accept by token also backfills shares.email to the authed email (lowercased)
+// • Diagnostics endpoint /__diag_shares to inspect share rows for a workspace
+// • No breaking changes to existing endpoints
+
+export default {
+  async fetch(req, env, ctx) {
+    const url = new URL(req.url);
+    const origin = req.headers.get('Origin') || '';
+    const method = req.method.toUpperCase();
+
+    if (method === 'OPTIONS') return withCORS(env, origin, new Response(null, { status: 204 }));
+    const path = normalizePath(url.pathname, env);
+
+    try {
+      await ensureSchema(env);
+
+      // ----- Diagnostics -----
+      if (path === '/__diag' && method === 'GET') {
+        return J({
+          ok: true,
+          dbOK: await quickDbCheck(env).catch(() => false),
+          hasStytch: !!(env.STYTCH_PROJECT_ID && env.STYTCH_SECRET),
+          resendKey: !!env.RESEND_API_KEY,
+          inviteFrom: !!env.INVITE_FROM,
+          appBaseUrl: env.APP_BASE_URL || null,
+          prefix: env.ROUTE_PREFIX || ''
+        }, 200, origin, env);
+      }
+
+      // Inspect shares for a workspace (helps debug email casing)
+      if (path === '/__diag_shares' && method === 'GET') {
+        const ws = url.searchParams.get('ws') || '';
+        if (!ws) return J({ error: 'ws_required' }, 400, origin, env);
+        const rows = await env.DB.prepare(
+          `SELECT id, workspace_id, email, invited_at, accepted_by_user_id, role, token
+             FROM shares WHERE workspace_id = ? ORDER BY invited_at DESC`
+        ).bind(ws).all();
+        return J({ shares: rows.results || [] }, 200, origin, env);
+      }
+
+      if (path === '/__send_test' && method === 'POST') {
+        const body = await readJson(req);
+        const to = normalizeEmail(body?.to);
+        if (!to) return J({ error: 'to required' }, 400, origin, env);
+        const link = buildAcceptLink(env, 'diagnostic-ws', token22(), req);
+        try {
+          const delivery = await sendInviteEmail(env, {
+            to,
+            inviteLink: link,
+            inviterEmail: 'diagnostic@solara',
+            workspaceName: 'Diagnostics'
+          });
+          return J({ ok: true, delivery }, 200, origin, env);
+        } catch (e) {
+          return J({ ok: false, error: String(e?.message || e) }, 502, origin, env);
+        }
+      }
+
+      // ----- Index & Utilities -----
+      if (path === '/' && method === 'GET') {
+        return J({ ok:true, service:'Solara API', endpoints:[
+          'GET /__diag','GET /__diag_shares?ws=...','POST /__send_test','GET /__health','GET /__echo','GET /__whoami','GET /auth/check',
+          'GET /workspaces','POST /workspaces','PATCH /workspaces/:id','DELETE /workspaces/:id',
+          'GET /tasks?workspace_id=...','POST /tasks',
+          'GET /shares?workspace_id=...','POST /shares','PATCH /shares/:id','DELETE /shares/:id','POST /shares/accept','POST /shares/:id/resend'
+        ], prefix: env.ROUTE_PREFIX || '' }, 200, origin, env);
+      }
+      if (path === '/__health' && method === 'GET') {
+        const dbOK = await quickDbCheck(env).catch(() => false);
+        const hasStytch = !!(env.STYTCH_PROJECT_ID && env.STYTCH_SECRET);
+        return J({ ok:true, dbOK, hasStytch, prefix: env.ROUTE_PREFIX || '' }, 200, origin, env);
+      }
+      if (path === '/__echo' && method === 'GET') {
+        return J({ path: url.pathname, normalized: path, method, headers: Object.fromEntries(req.headers) }, 200, origin, env);
+      }
+      if (path === '/__whoami' && method === 'GET') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const row = await env.DB.prepare('SELECT id,email,name,created_at,updated_at FROM users WHERE id = ?').bind(auth.user_id).first();
+        return J({ auth, dbUser: row || null }, 200, origin, env);
+      }
+
+      // ----- Auth check -----
+      if (path === '/auth/check' && method === 'GET') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        return J({ user_id: auth.user_id, email: auth.email, name: auth.name }, 200, origin, env);
+      }
+
+      // ----- Workspaces -----
+      if (path === '/workspaces' && method === 'GET') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const rows = await listWorkspaces(env, auth);
+        return J({ workspaces: rows }, 200, origin, env);
+      }
+      if (path === '/workspaces' && method === 'POST') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const body = await readJson(req); const name = (body?.name || '').trim();
+        if (!name) return J({ error: 'name_required' }, 400, origin, env);
+        const ws = await createWorkspace(env, auth, name);
+        return J({ workspace: ws }, 201, origin, env);
+      }
+      if (path.startsWith('/workspaces/') && (method === 'PATCH' || method === 'DELETE')) {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const id = path.split('/')[2]; if (!id) return J({ error: 'bad_request' }, 400, origin, env);
+        if (method === 'PATCH') {
+          const body = await readJson(req); const name = (body?.name || '').trim();
+          if (!name) return J({ error: 'name_required' }, 400, origin, env);
+          const ok = await renameWorkspace(env, auth, id, name);
+          if (!ok) return J({ error: 'forbidden_or_not_found' }, 404, origin, env);
+          return J({ ok:true }, 200, origin, env);
+        } else {
+          const ok = await deleteWorkspace(env, auth, id);
+          if (!ok) return J({ error: 'forbidden_or_not_found' }, 404, origin, env);
+          return J({ ok:true }, 200, origin, env);
+        }
+      }
+
+      // ----- Tasks -----
+      if (path === '/tasks' && method === 'GET') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const wid = new URL(req.url).searchParams.get('workspace_id');
+        if (!wid) return J({ error: 'workspace_id_required' }, 400, origin, env);
+        if (!(await canAccessWorkspace(env, auth, wid))) return J({ error: 'not_found' }, 404, origin, env);
+        const tabs = await getTabs(env, wid);
+        return J({ tabs }, 200, origin, env);
+      }
+      if (path === '/tasks' && method === 'POST') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const body = await readJson(req); const wid = (body?.workspace_id || '').trim();
+        if (!wid) return J({ error: 'workspace_id_required' }, 400, origin, env);
+        const perm = await roleFor(env, auth, wid);
+        if (perm === 'viewer') return J({ error: 'forbidden' }, 403, origin, env);
+        if (!(await canAccessWorkspace(env, auth, wid))) return J({ error: 'not_found' }, 404, origin, env);
+        const tabs = body?.tabs && typeof body.tabs === 'object' ? body.tabs : {};
+        await saveTabs(env, wid, tabs);
+        return J({ ok:true }, 200, origin, env);
+      }
+
+      // ----- Shares -----
+      if (path === '/shares' && method === 'GET') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const wid = new URL(req.url).searchParams.get('workspace_id');
+        if (!wid) return J({ error: 'workspace_id_required' }, 400, origin, env);
+        if (!(await canAccessWorkspace(env, auth, wid))) return J({ error: 'not_found' }, 404, origin, env);
+        const shares = await listShares(env, wid);
+        return J({ shares }, 200, origin, env);
+      }
+
+      // Create + email invite
+      if (path === '/shares' && method === 'POST') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const body = await readJson(req);
+        const wid = (body?.workspace_id || '').trim();
+        const email = normalizeEmail(body?.email);
+        if (!wid || !email) return J({ error: 'workspace_id_and_email_required' }, 400, origin, env);
+        if (!(await isOwner(env, auth, wid))) return J({ error: 'forbidden' }, 403, origin, env);
+
+        const { share, token } = await upsertShareWithToken(env, wid, email);
+
+        const wsName = await getWorkspaceName(env, wid);
+        const inviteLink = buildAcceptLink(env, wid, token, req);
+
+        try {
+          const delivery = await sendInviteEmail(env, {
+            to: email,
+            inviteLink,
+            inviterEmail: auth.email || 'noreply@solara',
+            workspaceName: wsName
+          });
+          return J({ share, delivery }, 201, origin, env);
+        } catch (e) {
+          console.error('[Invite] send failed:', e);
+          return J({ share, delivery: null, error: String(e?.message || e) }, 502, origin, env);
+        }
+      }
+
+      // Accept by token (new flow) OR by workspace_id (legacy flow)
+      if (path === '/shares/accept' && method === 'POST') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const body = await readJson(req);
+        const token = (body?.token || '').trim();
+        const legacyWs = (body?.workspace_id || '').trim();
+
+        if (!token && !legacyWs) return J({ error: 'token_or_workspace_id_required' }, 400, origin, env);
+
+        if (token) {
+          const row = await env.DB.prepare('SELECT id,workspace_id,email FROM shares WHERE token = ?').bind(token).first();
+          if (!row) return J({ error: 'invalid_token' }, 404, origin, env);
+
+          // idempotent accept + backfill email lowercased to authed email (helps future lookups)
+          await env.DB.prepare(
+            'UPDATE shares SET accepted_by_user_id = ?, email = COALESCE(LOWER(email), ?), token = NULL WHERE id = ?'
+          ).bind(auth.user_id, auth.email, row.id).run();
+
+          return J({ ok:true, workspace_id: row.workspace_id, email: row.email || auth.email }, 200, origin, env);
+        } else {
+          // Legacy: accept using explicit workspace_id (mark the row that matches authed email)
+          const share = await env.DB.prepare(
+            `SELECT id FROM shares WHERE workspace_id = ? AND LOWER(email) = LOWER(?) LIMIT 1`
+          ).bind(legacyWs, auth.email).first();
+          if (!share) return J({ error: 'share_not_found_for_email' }, 404, origin, env);
+          await env.DB.prepare('UPDATE shares SET accepted_by_user_id = ? WHERE id = ?').bind(auth.user_id, share.id).run();
+          return J({ ok:true, workspace_id: legacyWs, email: auth.email }, 200, origin, env);
+        }
+      }
+
+      // Resend invite for a share id
+      if (path.startsWith('/shares/') && path.endsWith('/resend') && method === 'POST') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const id = path.split('/')[2];
+        const row = await env.DB.prepare('SELECT id,workspace_id,email FROM shares WHERE id = ?').bind(id).first();
+        if (!row) return J({ error: 'not_found' }, 404, origin, env);
+        if (!(await isOwner(env, auth, row.workspace_id))) return J({ error: 'forbidden' }, 403, origin, env);
+        const token = token22();
+        await env.DB.prepare('UPDATE shares SET token = ?, invited_at = CURRENT_TIMESTAMP WHERE id = ?').bind(token, id).run();
+        const wsName = await getWorkspaceName(env, row.workspace_id);
+        const inviteLink = buildAcceptLink(env, row.workspace_id, token, req);
+        try {
+          const delivery = await sendInviteEmail(env, {
+            to: normalizeEmail(row.email),
+            inviteLink,
+            inviterEmail: auth.email || 'noreply@solara',
+            workspaceName: wsName
+          });
+          return J({ ok:true, delivery }, 200, origin, env);
+        } catch (e) {
+          return J({ ok:false, error: String(e?.message || e) }, 502, origin, env);
+        }
+      }
+
+      // Update role / delete share
+      if (path.startsWith('/shares/') && method === 'PATCH') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const id = path.split('/')[2]; if (!id) return J({ error: 'bad_request' }, 400, origin, env);
+        const body = await readJson(req); const role = (body?.role || '').trim();
+        if (!['viewer','editor'].includes(role)) return J({ error: 'invalid_role' }, 400, origin, env);
+        const ok = await setShareRole(env, auth, id, role);
+        if (!ok) return J({ error: 'forbidden_or_not_found' }, 404, origin, env);
+        return J({ ok:true }, 200, origin, env);
+      }
+      if (path.startsWith('/shares/') && method === 'DELETE') {
+        const auth = await verifySession(req, env); await upsertUser(env, auth);
+        const id = path.split('/')[2]; if (!id) return J({ error: 'bad_request' }, 400, origin, env);
+        const ok = await deleteShare(env, auth, id);
+        if (!ok) return J({ error: 'forbidden_or_not_found' }, 404, origin, env);
+        return J({ ok:true }, 200, origin, env);
+      }
+
+      return J({ error:'not_found', path, hint:'If routed under a prefix, set env.ROUTE_PREFIX.' }, 404, origin, env);
+    } catch (err) {
+      const message = String(err?.message || err);
+      const code = /unauthorized/i.test(message) ? 401 : 500;
+      return J({ error: message }, code, origin, env);
+    }
+  }
+};
+
+// ===== Helpers =====
+function normalizePath(pathname, env) {
+  const prefix = (env.ROUTE_PREFIX || '').trim();
+  if (!prefix) return pathname.replace(/\/$/, '') || '/';
+  const want = prefix.startsWith('/') ? prefix : '/' + prefix;
+  let p = pathname; if (p.startsWith(want)) p = p.slice(want.length) || '/';
+  return p.replace(/\/$/, '') || '/';
+}
+
+function withCORS(env, origin, res) {
+  const allowed = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const allow = allowed.length ? (allowed.includes(origin) ? origin : allowed[0]) : (origin || '*');
+  const h = new Headers(res.headers);
+  h.set('Access-Control-Allow-Origin', allow);
+  h.set('Vary', 'Origin');
+  h.set('Access-Control-Allow-Credentials', 'true');
+  h.set('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+  h.set('Access-Control-Allow-Headers', 'authorization, content-type');
+  return new Response(res.body, { status: res.status, headers: h });
+}
+
+function J(data, status, origin, env) {
+  return withCORS(env, origin, new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8' } }));
+}
+
+async function readJson(req) { if (!req.body) return {}; try { return await req.json(); } catch { return {}; } }
+function bearer(req) { const h = req.headers.get('authorization') || req.headers.get('Authorization') || ''; const m = h.match(/^Bearer\s+(.+)$/i); return m ? m[1] : null; }
+function stytchBase(env) { const pid = env.STYTCH_PROJECT_ID || ''; const sec = env.STYTCH_SECRET || ''; return (/test/.test(pid) || /test/.test(sec)) ? 'https://test.stytch.com' : 'https://api.stytch.com'; }
+
+function normalizeEmail(e){
+  if (!e) return '';
+  return String(e).trim().toLowerCase();
+}
+
+async function verifySession(req, env) {
+  const jwt = bearer(req) || '';
+  if (!jwt) throw new Error('unauthorized: missing bearer');
+  if (!env.STYTCH_PROJECT_ID || !env.STYTCH_SECRET) throw new Error('server_misconfig: missing stytch vars');
+  const auth = btoa(`${env.STYTCH_PROJECT_ID}:${env.STYTCH_SECRET}`);
+  const res = await fetch(`${stytchBase(env)}/v1/sessions/authenticate`, { method:'POST', headers:{ 'content-type':'application/json', authorization:`Basic ${auth}` }, body: JSON.stringify({ session_jwt: jwt }) });
+  if (res.status === 401) throw new Error('unauthorized: stytch rejected token');
+  if (!res.ok) throw new Error(`stytch_error_${res.status}`);
+  const data = await res.json();
+  const user = data?.user || {};
+  const emails = user?.email_addresses || data?.email_addresses || [];
+  const emailRaw = emails[0]?.email_address || data?.email || '';
+  const email = normalizeEmail(emailRaw);
+  const name = [user?.name?.first_name, user?.name?.last_name].filter(Boolean).join(' ') || data?.name || '';
+  const user_id = data?.user_id || user?.user_id || data?.session?.user_id || '';
+  if (!user_id) throw new Error('unauthorized: missing user_id');
+  return { user_id, email, name };
+}
+
+async function quickDbCheck(env) { try { await env.DB.exec('PRAGMA foreign_keys = ON;'); await env.DB.exec('SELECT 1;'); return true; } catch { return false; } }
+async function columnExists(env, table, column) { const rs = await env.DB.prepare(`PRAGMA table_info(${table});`).all(); const rows = rs.results || []; return rows.some(r => String(r.name) === column); }
+
+async function ensureSharesColumns(env) {
+  if (!(await columnExists(env, 'shares', 'email'))) {
+    await env.DB.prepare(`ALTER TABLE shares ADD COLUMN email TEXT;`).run().catch(()=>{});
+    const hadInvitee = await columnExists(env, 'shares', 'invitee_email');
+    if (hadInvitee) { await env.DB.prepare(`UPDATE shares SET email = COALESCE(email, invitee_email) WHERE email IS NULL;`).run().catch(()=>{}); }
+  }
+  if (!(await columnExists(env, 'shares', 'accepted_by_user_id'))) {
+    await env.DB.prepare(`ALTER TABLE shares ADD COLUMN accepted_by_user_id TEXT;`).run().catch(()=>{});
+  }
+  if (!(await columnExists(env, 'shares', 'role'))) {
+    await env.DB.prepare(`ALTER TABLE shares ADD COLUMN role TEXT DEFAULT 'editor';`).run().catch(()=>{});
+  }
+  if (!(await columnExists(env, 'shares', 'token'))) {
+    await env.DB.prepare(`ALTER TABLE shares ADD COLUMN token TEXT;`).run().catch(()=>{});
+  }
+}
+
+async function ensureSchema(env) {
+  await env.DB.batch([
+    env.DB.prepare('PRAGMA foreign_keys = ON;'),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT,
+      name TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE CASCADE
+    );`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS shares (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      email TEXT,
+      invited_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      accepted_by_user_id TEXT,
+      role TEXT DEFAULT 'editor',
+      token TEXT,
+      UNIQUE(workspace_id, email),
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    );`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS workspace_state (
+      workspace_id TEXT PRIMARY KEY,
+      tabs_json TEXT NOT NULL DEFAULT '{}',
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    );`),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_id);'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_shares_ws ON shares(workspace_id);')
+  ]);
+  await ensureSharesColumns(env);
+
+  // Soft-migrate existing share emails to lower-case to avoid mismatches
+  await env.DB.prepare(`UPDATE shares SET email = LOWER(email) WHERE email IS NOT NULL AND email <> LOWER(email)`).run().catch(()=>{});
+  await env.DB.prepare(`UPDATE users  SET email = LOWER(email) WHERE email IS NOT NULL AND email <> LOWER(email)`).run().catch(()=>{});
+}
+
+async function upsertUser(env, { user_id, email, name }) {
+  const now = new Date().toISOString();
+  const safeEmail = normalizeEmail(email) || `${user_id}@noemail.local`;
+  const safeName = (name && String(name).trim()) || '';
+  const row = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(user_id).first();
+  if (row) {
+    await env.DB.prepare('UPDATE users SET email = ?, name = ?, updated_at = ? WHERE id = ?')
+      .bind(safeEmail, safeName || null, now, user_id).run();
+  } else {
+    await env.DB.prepare('INSERT INTO users (id, email, name, created_at, updated_at) VALUES (?,?,?,?,?)')
+      .bind(user_id, safeEmail, safeName || null, now, now).run();
+  }
+}
+
+function uuid() { try { return crypto.randomUUID(); } catch { return Math.random().toString(36).slice(2); } }
+
+async function listWorkspaces(env, auth) {
+  const q = `
+    SELECT DISTINCT w.id, w.name, w.owner_id, w.created_at, w.updated_at
+    FROM workspaces w
+    LEFT JOIN shares s ON s.workspace_id = w.id
+    WHERE w.owner_id = ?
+       OR s.accepted_by_user_id = ?
+       OR (s.email IS NOT NULL AND LOWER(s.email) = LOWER(?))
+    ORDER BY w.updated_at DESC, w.created_at DESC
+  `;
+  const rs = await env.DB.prepare(q).bind(auth.user_id, auth.user_id, auth.email || '').all();
+  return rs.results || [];
+}
+
+async function isOwner(env, auth, workspace_id){
+  const row = await env.DB.prepare('SELECT owner_id FROM workspaces WHERE id = ?').bind(workspace_id).first();
+  return !!row && row.owner_id === auth.user_id;
+}
+
+async function roleFor(env, auth, workspace_id){
+  const owner = await env.DB.prepare('SELECT owner_id FROM workspaces WHERE id = ?').bind(workspace_id).first();
+  if (owner && owner.owner_id === auth.user_id) return 'owner';
+  const share = await env.DB.prepare(
+    'SELECT role,accepted_by_user_id,email FROM shares WHERE workspace_id = ? AND (accepted_by_user_id = ? OR LOWER(email) = LOWER(?)) LIMIT 1'
+  ).bind(workspace_id, auth.user_id, auth.email||'').first();
+  return share ? (share.role||'editor') : 'none';
+}
+
+async function canAccessWorkspace(env, auth, id) {
+  const row = await env.DB.prepare(`
+    SELECT 1 FROM workspaces w
+    LEFT JOIN shares s ON s.workspace_id = w.id
+    WHERE w.id = ? AND (w.owner_id = ? OR s.accepted_by_user_id = ? OR (s.email IS NOT NULL AND LOWER(s.email) = LOWER(?)))
+    LIMIT 1
+  `).bind(id, auth.user_id, auth.user_id, auth.email || '').first();
+  return !!row;
+}
+
+async function createWorkspace(env, auth, name) {
+  const id = uuid(); const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO workspaces (id, owner_id, name, created_at, updated_at) VALUES (?,?,?,?,?)')
+      .bind(id, auth.user_id, name, now, now),
+    env.DB.prepare('INSERT INTO workspace_state (workspace_id, tabs_json, updated_at) VALUES (?, ?, ?)')
+      .bind(id, '{}', now)
+  ]);
+  return { id, name, owner_id: auth.user_id, created_at: now, updated_at: now };
+}
+
+async function renameWorkspace(env, auth, id, name) {
+  const owner = await env.DB.prepare('SELECT owner_id FROM workspaces WHERE id = ?').bind(id).first();
+  if (!owner || owner.owner_id !== auth.user_id) return false;
+  const now = new Date().toISOString();
+  await env.DB.prepare('UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ?').bind(name, now, id).run();
+  return true;
+}
+
+async function deleteWorkspace(env, auth, id) {
+  const owner = await env.DB.prepare('SELECT owner_id FROM workspaces WHERE id = ?').bind(id).first();
+  if (!owner || owner.owner_id !== auth.user_id) return false;
+  await env.DB.prepare('DELETE FROM workspaces WHERE id = ?').bind(id).run();
+  return true;
+}
+
+async function getTabs(env, workspace_id) {
+  const row = await env.DB.prepare('SELECT tabs_json FROM workspace_state WHERE workspace_id = ?')
+    .bind(workspace_id).first();
+  try { return row?.tabs_json ? JSON.parse(row.tabs_json) : {}; } catch { return {}; }
+}
+
+async function saveTabs(env, workspace_id, tabs) {
+  const now = new Date().toISOString();
+  const payload = JSON.stringify(tabs || {});
+  await env.DB.prepare(`
+    INSERT INTO workspace_state (workspace_id, tabs_json, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(workspace_id) DO UPDATE SET
+      tabs_json = excluded.tabs_json,
+      updated_at = excluded.updated_at
+  `).bind(workspace_id, payload, now).run();
+}
+
+// ----- Shares helpers -----
+async function listShares(env, workspace_id){
+  const rs = await env.DB.prepare(
+    'SELECT id,workspace_id,email,invited_at,accepted_by_user_id,role FROM shares WHERE workspace_id = ? ORDER BY invited_at DESC'
+  ).bind(workspace_id).all();
+  return rs.results || [];
+}
+
+async function upsertShareWithToken(env, workspace_id, email){
+  const now = new Date().toISOString();
+  const token = token22();
+  const e = normalizeEmail(email);
+  try {
+    const id = uuid();
+    await env.DB.prepare('INSERT INTO shares (id, workspace_id, email, invited_at, role, token) VALUES (?,?,?,?,?,?)')
+      .bind(id, workspace_id, e, now, 'editor', token).run();
+    return { share: { id, workspace_id, email: e, invited_at: now, role: 'editor', accepted_by_user_id: null }, token };
+  } catch (err) {
+    const row = await env.DB.prepare('SELECT id FROM shares WHERE workspace_id = ? AND LOWER(email) = LOWER(?)').bind(workspace_id, e).first();
+    if (!row) throw err;
+    await env.DB.prepare('UPDATE shares SET token = ?, invited_at = ? WHERE id = ?').bind(token, now, row.id).run();
+    const fresh = await env.DB.prepare('SELECT id,workspace_id,email,invited_at,accepted_by_user_id,role FROM shares WHERE id = ?').bind(row.id).first();
+    return { share: fresh, token };
+  }
+}
+
+async function setShareRole(env, auth, share_id, role){
+  const share = await env.DB.prepare('SELECT workspace_id FROM shares WHERE id = ?').bind(share_id).first();
+  if (!share) return false;
+  if (!(await isOwner(env, auth, share.workspace_id))) return false;
+  await env.DB.prepare('UPDATE shares SET role = ? WHERE id = ?').bind(role, share_id).run();
+  return true;
+}
+
+async function deleteShare(env, auth, share_id){
+  const row = await env.DB.prepare('SELECT workspace_id, email, accepted_by_user_id FROM shares WHERE id = ?').bind(share_id).first();
+  if (!row) return false;
+  if (!(await isOwner(env, auth, row.workspace_id))) {
+    const isSelf = !!(row.accepted_by_user_id && row.accepted_by_user_id === auth.user_id) || (normalizeEmail(row.email) === (auth.email||''));
+    if (!isSelf) return false;
+  }
+  await env.DB.prepare('DELETE FROM shares WHERE id = ?').bind(share_id).run();
+  return true;
+}
+
+async function getWorkspaceName(env, workspace_id){
+  const row = await env.DB.prepare('SELECT name FROM workspaces WHERE id = ?').bind(workspace_id).first();
+  return row?.name || 'Solara workspace';
+}
+
+// ----- Invite email utilities -----
+function token22() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+function buildAcceptLink(env, workspace_id, token, req) {
+  const app = (env.APP_BASE_URL || new URL(req.url).origin).replace(/\/+$/,'');
+  return `${app}/accept-invite.html?token=${encodeURIComponent(token)}&ws=${encodeURIComponent(workspace_id)}`;
+}
+
+async function sendInviteEmail(env, { to, inviteLink, inviterEmail, workspaceName }) {
+  if (!env.RESEND_API_KEY) throw new Error('RESEND_API_KEY missing');
+  if (!env.INVITE_FROM)   throw new Error('INVITE_FROM missing');
+  const payload = {
+    from: env.INVITE_FROM,
+    to: [normalizeEmail(to)],
+    subject: `You're invited to ${workspaceName || 'a Solara workspace'}`,
+    html: `
+      <div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; line-height:1.5;">
+        <h2>Solara — Workspace Invite</h2>
+        <p><strong>${escapeHtml(inviterEmail || 'A teammate')}</strong> invited you${workspaceName ? ` to <strong>${escapeHtml(workspaceName)}</strong>` : ''}.</p>
+        <p><a href="${inviteLink}" style="display:inline-block;padding:10px 16px;border-radius:10px;background:#4f46e5;color:#fff;text-decoration:none;">Accept Invitation</a></p>
+        <p>If the button doesn't work, paste this link into your browser:</p>
+        <p><code>${inviteLink}</code></p>
+      </div>
+    `.trim(),
+  };
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const text = await resp.text();
+  let json = null; try { json = JSON.parse(text); } catch {}
+  console.log('[Resend] status', resp.status, 'body', text);
+
+  if (!resp.ok) {
+    const msg = (json && (json.message || json.error)) || text || `HTTP ${resp.status}`;
+    throw new Error(`Resend failed: ${msg}`);
+  }
+  return { provider: 'resend', status: 'queued', message_id: json?.id || null };
+}
+
+function escapeHtml(s=''){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+}
