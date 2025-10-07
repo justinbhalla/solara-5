@@ -43,7 +43,7 @@
     <div class="flex items-center gap-4">
       <!-- Presence -->
       <div class="relative">
-        <button id="presenceBtn" class="flex -space-x-2">
+        <button id="presenceBtn" class="flex -space-x-2" title="Online users">
           <span id="presenceAvatars" class="flex -space-x-2"></span>
           <span id="presenceCount" class="ml-2 text-xs text-gray-500"></span>
         </button>
@@ -151,20 +151,17 @@
 
 <script>
 /*************************
- *  CONFIG
+ *  CONFIG               *
  *************************/
-const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev";
+const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev"; // ← your worker origin
 const apiUrl = (p) => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
 
 /**************
- *  STATE
+ *  STATE     *
  **************/
 let WORKSPACE_ID = '';
 let activeTab = null;
-let tabData = {};         // LOCAL (UI)
-let BASE = {};            // last server snapshot merged against
-let pollTimer = null;
-
+let tabData = {};
 let sessionJWT = null;
 let authedUser = null;
 let currentUserKey = null;
@@ -172,15 +169,17 @@ let dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null };
 let STORAGE_NS = null;
 let currentRole = 'owner';
 
-/* Presence state */
+/* Realtime */
 let liveSocket = null;
 let heartbeatTimer = null;
-const presence = new Map(); // userId -> { id,name,email,at }
+
+/* Presence map: userId -> { id, name, email, at } */
+const presence = new Map();
 
 /*******************
- *  UTILITIES
+ *  UTILITIES       *
  *******************/
-const debounce = (fn, ms = 600) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+const debounce = (fn, ms = 500) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 function getSessionJWT(){
   const m = document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : (localStorage.getItem('stytch_session_jwt') || localStorage.getItem('solara_session_jwt') || null);
@@ -210,14 +209,15 @@ function initialsForUser(name, email){
   if (parts.length) return parts.slice(0,2).map(x=>x[0].toUpperCase()).join('');
   return (email||'?').slice(0,2).toUpperCase();
 }
-function displayNameFor(user){
-  const parts = [user?.name?.first_name, user?.name?.last_name].filter(Boolean);
+function displayNameFor(u){
+  const parts = [u?.name?.first_name, u?.name?.last_name].filter(Boolean);
   if (parts.length) return parts.join(' ');
-  return user?.email_addresses?.[0]?.email_address || '';
+  return u?.email_addresses?.[0]?.email_address || '';
 }
+function cryptoRandom(){ try{ return crypto.randomUUID(); }catch{ return Math.random().toString(36).slice(2); } }
 
 /*******************
- *  SHAPE/MERGE
+ *  SHAPE + COLS    *
  *******************/
 const COLS = ['todo','inprogress','done'];
 function migrateTaskShapes(data){
@@ -238,110 +238,9 @@ function migrateTaskShapes(data){
   });
   return out;
 }
-function cryptoRandom(){ try{ return crypto.randomUUID(); }catch{ return Math.random().toString(36).slice(2); } }
-function clone(o){ return JSON.parse(JSON.stringify(o||{})); }
-function ensureTab(tabs, name){ if(!tabs[name]) tabs[name] = { todo:[], inprogress:[], done:[] }; return tabs[name]; }
-function indexTabs(tabs){
-  const map = new Map();
-  Object.keys(tabs||{}).forEach(tab => COLS.forEach(col => (tabs[tab][col]||[]).forEach(task => map.set(task.id, { task, tab, col }))));
-  return map;
-}
-function sortCols(tabs){
-  Object.keys(tabs||{}).forEach(tab => COLS.forEach(col => { tabs[tab][col].sort((a,b)=> (a.pos||0)-(b.pos||0) || (a.upd||0)-(b.upd||0)); }));
-}
-function reindexColumn(list){ list.forEach((t,i)=> t.pos = i+1); }
-function mergeTabs(BASE0, LOCAL0, REMOTE0){
-  const BASE = clone(migrateTaskShapes(BASE0||{}));
-  const LOCAL = clone(migrateTaskShapes(LOCAL0||{}));
-  const REMOTE = clone(migrateTaskShapes(REMOTE0||{}));
-  const baseIdx = indexTabs(BASE), locIdx = indexTabs(LOCAL), remIdx = indexTabs(REMOTE);
-  const out = clone(BASE);
-  new Set([...Object.keys(LOCAL||{}), ...Object.keys(REMOTE||{}), ...Object.keys(BASE||{})]).forEach(t => ensureTab(out, t));
-  const ids = new Set([...baseIdx.keys(), ...locIdx.keys(), ...remIdx.keys()]);
-
-  function placeTask(t, tab, col, pos){ ensureTab(out, tab); const list = out[tab][col]; const i = list.findIndex(x=>x.id===t.id); if(i!==-1) list[i]=t; else list.push(t); if(isFinite(pos)) t.pos=pos; }
-  function removeTask(id){ Object.keys(out).forEach(tab => COLS.forEach(col => { const list = out[tab][col]; const i=list.findIndex(x=>x.id===id); if(i!==-1) list.splice(i,1); })); }
-  const newer = (a,b)=> (a?.upd||0) >= (b?.upd||0) ? a : b;
-
-  ids.forEach(id=>{
-    const b = baseIdx.get(id), l = locIdx.get(id), r = remIdx.get(id);
-    const bt=b?.task, lt=l?.task, rt=r?.task;
-    if(!lt && !rt){ removeTask(id); return; }
-    if(lt && !rt){ placeTask(lt, l.tab, l.col, lt.pos); return; }
-    if(rt && !lt){ placeTask(rt, r.tab, r.col, rt.pos); return; }
-    // both exist
-    let tab = l.tab, col = l.col, pos = lt.pos;
-    if(l.tab!==r.tab || l.col!==r.col){
-      const win = newer(lt,rt)===lt ? l : r;
-      tab = win.tab; col = win.col; pos = win.task.pos;
-    }
-    const merged = { ...bt, ...rt, ...lt };
-    ['content','dueDate','priority','pos','upd','by'].forEach(k => merged[k] = newer(lt,rt)[k]);
-    placeTask(merged, tab, col, pos);
-  });
-
-  Object.keys(out).forEach(tab => { if(!(LOCAL[tab] || REMOTE[tab])) delete out[tab]; });
-  sortCols(out);
-  Object.keys(out).forEach(tab => COLS.forEach(col => reindexColumn(out[tab][col])));
-  return out;
-}
 
 /*******************
- *  LOCAL STORAGE
- *******************/
-function loadTabsFromStorage(){ try{ const raw = localStorage.getItem(storageKey()); const parsed = raw ? JSON.parse(raw) : {}; return migrateTaskShapes(parsed); }catch{ return {}; } }
-function saveTabsToStorage(){ try{ localStorage.setItem(storageKey(), JSON.stringify(tabData)); }catch{} }
-
-/*******************
- *  CLOUD ACCESS
- *******************/
-async function fetchCloudTabs(){
-  if(!sessionJWT || !WORKSPACE_ID) return null;
-  try{
-    const url = apiUrl('tasks') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
-    const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
-    if(!res.ok) return null;
-    const data = await res.json().catch(()=>({}));
-    return data?.tabs || {};
-  }catch{ return null; }
-}
-async function postCloudTabs(tabs){
-  if(!sessionJWT || !WORKSPACE_ID) return false;
-  try{
-    const res = await fetch(apiUrl('tasks'), {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionJWT}` },
-      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs })
-    });
-    return res.ok;
-  }catch{ return false; }
-}
-const saveTabsToCloud = debounce(async ()=>{
-  if(currentRole==='viewer') return;
-  const merged = mergeTabs(BASE, tabData, BASE); // local only
-  const ok = await postCloudTabs(merged);
-  if(ok){ BASE = clone(merged); }
-}, 500);
-
-async function pollCloud(){
-  if(!sessionJWT || !WORKSPACE_ID) return;
-  try{
-    const REMOTE = await fetchCloudTabs();
-    if(!REMOTE) return;
-    const merged = mergeTabs(BASE, tabData, REMOTE);
-    const before = JSON.stringify(tabData);
-    tabData = merged;
-    BASE = clone(merged);
-    saveTabsToStorage();
-    if (before !== JSON.stringify(tabData)){
-      renderTabs();
-      switchTab(activeTab);
-    }
-  }catch{}
-}
-
-/*******************
- *  AUTH
+ *  AUTH            *
  *******************/
 function requireReauth(){
   try{
@@ -416,14 +315,16 @@ async function verifySessionAndHydrate(){
 }
 
 /*******************
- *  MEMBERS UI + API
+ *  MEMBERS (UI + API) *
  *******************/
 function openMembers(){ document.getElementById('membersModal').classList.remove('hidden'); loadMembers(); }
 function closeMembers(){ document.getElementById('membersModal').classList.add('hidden'); }
+
 document.addEventListener('DOMContentLoaded', ()=>{
   const btn = document.getElementById('manageBtn');
   if(btn){ btn.addEventListener('click', ()=>{ if(!WORKSPACE_ID) return alert('Open a workspace to manage members.'); openMembers(); }); }
 });
+
 async function listShares(){
   if(!sessionJWT) return [];
   const url = apiUrl('shares') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
@@ -439,7 +340,6 @@ async function listShares(){
     if (thisWs.owner_id !== (JSON.parse(localStorage.getItem('stytch_auth')||'{}').user_id||'__')) {
       const share = (data.shares||[]).find(s=> (s.email||'').toLowerCase()===me && s.accepted_by_user_id);
       if(share) currentRole = (share.role||'editor');
-      else currentRole = 'none';
     }
   }
   return data.shares || [];
@@ -456,6 +356,7 @@ async function deleteShare(id){
   const res = await fetch(apiUrl(`shares/${id}`), { method:'DELETE', headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
   return res;
 }
+
 async function loadMembers(){
   const list = document.getElementById('membersList');
   list.innerHTML = '<div class="py-6 text-sm text-gray-500">Loading…</div>';
@@ -494,7 +395,256 @@ async function loadMembers(){
 }
 
 /*******************
- *  TABS + UI
+ *  LOCAL STORAGE   *
+ *******************/
+function loadTabsFromStorage(){
+  try {
+    const raw = localStorage.getItem(storageKey());
+    const parsed = raw ? JSON.parse(raw) : {};
+    return migrateTaskShapes(parsed);
+  } catch { return {}; }
+}
+function saveTabsToStorage(){
+  const key = storageKey();
+  const json = JSON.stringify(tabData);
+  try{ localStorage.setItem(key, json); localStorage.setItem('solara_tabs_backup', json); }catch{}
+}
+
+/*******************
+ *  CLOUD SNAPSHOT  *
+ *******************/
+async function fetchCloudTabs(){
+  if(!sessionJWT || !WORKSPACE_ID) return {};
+  const url = apiUrl('tasks') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
+  const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
+  if(!res.ok) return {};
+  const data = await res.json().catch(()=>({tabs:{}}));
+  return migrateTaskShapes(data.tabs || {});
+}
+async function postCloudTabs(tabs){
+  if(!sessionJWT || !WORKSPACE_ID) return false;
+  try{
+    const res = await fetch(apiUrl('tasks'), {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionJWT}` },
+      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs })
+    });
+    return res.ok;
+  }catch{ return false; }
+}
+const saveTabsToCloud = debounce(async ()=>{
+  if(currentRole==='viewer') return;
+  await postCloudTabs(tabData);
+}, 500);
+
+/*******************
+ *  OP-BASED LIVE   *
+ *******************/
+function opId(){ try{ return crypto.randomUUID(); }catch{ return Math.random().toString(36).slice(2); } }
+
+function liveOp(op){
+  if(!WORKSPACE_ID) return;
+  const msg = {
+    type:'op',
+    ws: WORKSPACE_ID,
+    opId: opId(),
+    ts: Date.now(),
+    by: currentUserKey,
+    user: {
+      name: displayNameFor(authedUser) || '',
+      email: authedUser?.email_addresses?.[0]?.email_address || ''
+    },
+    ...op
+  };
+  // Optimistic apply for snappy UX
+  applyOp(msg, { fromSelf:true });
+  liveSend(msg);
+  // Checkpoint
+  saveTabsToCloud();
+}
+
+function applyOp(msg, { fromSelf=false } = {}){
+  if(!msg || msg.ws !== WORKSPACE_ID || msg.type !== 'op') return;
+
+  switch(msg.kind){
+    case 'task.update': {
+      const { tab, col, id, patch } = msg;
+      if(!(tabData[tab] && COLS.includes(col))) break;
+      const list = tabData[tab][col] || [];
+      const i = list.findIndex(t=>t.id===id);
+      if(i===-1) break;
+      list[i] = { ...list[i], ...patch, upd: Date.now(), by: msg.by || list[i].by };
+      break;
+    }
+    case 'task.create': {
+      const { tab, col, task } = msg;
+      if(!tabData[tab]) tabData[tab] = { todo:[], inprogress:[], done:[] };
+      (tabData[tab][col] = tabData[tab][col] || []).push(task);
+      break;
+    }
+    case 'task.delete': {
+      const { tab, id } = msg;
+      if(!tabData[tab]) break;
+      for(const c of COLS){
+        const list = tabData[tab][c] || [];
+        const i = list.findIndex(t=>t.id===id);
+        if(i!==-1){ list.splice(i,1); break; }
+      }
+      break;
+    }
+    case 'task.move': {
+      const { fromTab, fromCol, toTab, toCol, id, insertIndex, newPos } = msg;
+      if(!tabData[fromTab]) break;
+      let moved=null;
+      const src = tabData[fromTab][fromCol]||[];
+      const idx = src.findIndex(t=>t.id===id);
+      if(idx!==-1){ moved = src.splice(idx,1)[0]; }
+      if(!moved) break;
+      if(!tabData[toTab]) tabData[toTab] = { todo:[], inprogress:[], done:[] };
+      const dst = tabData[toTab][toCol] = tabData[toTab][toCol]||[];
+      const ix = Math.max(0, Math.min(insertIndex ?? dst.length, dst.length));
+      moved.pos = isFinite(newPos) ? newPos : ((dst[ix-1]?.pos||0) + (dst[ix]?.pos||((dst[ix-1]?.pos||0)+2)))/2;
+      moved.upd = Date.now(); moved.by = msg.by || moved.by;
+      dst.splice(ix,0,moved);
+      if(Math.abs((dst[ix+1]?.pos||moved.pos)-(dst[ix-1]?.pos||0)) < 1e-6){ dst.forEach((t,i)=> t.pos=i+1); }
+      break;
+    }
+    case 'tab.create': {
+      const { name } = msg;
+      if(!tabData[name]) tabData[name] = { todo:[], inprogress:[], done:[] };
+      if(!activeTab) activeTab = name;
+      break;
+    }
+    case 'tab.rename': {
+      const { from, to } = msg;
+      if(!tabData[from] || tabData[to]) break;
+      tabData[to] = tabData[from]; delete tabData[from];
+      if(activeTab===from) activeTab = to;
+      break;
+    }
+    case 'tab.delete': {
+      const { name } = msg;
+      if(!tabData[name]) break;
+      delete tabData[name];
+      if(activeTab===name) activeTab = Object.keys(tabData)[0]||null;
+      break;
+    }
+    default: return;
+  }
+
+  saveTabsToStorage();
+  renderTabs(); switchTab(activeTab);
+}
+
+/*******************
+ *  PRESENCE        *
+ *******************/
+function presenceSelf(){
+  const email = authedUser?.email_addresses?.[0]?.email_address || '';
+  const name = displayNameFor(authedUser) || email || 'You';
+  return { id: currentUserKey || email || 'me', name, email };
+}
+function renderPresence(){
+  const list = Array.from(presence.values())
+    .filter(p => Date.now() - (p.at||0) < 30000)
+    .sort((a,b)=> (a.name||a.email).localeCompare(b.name||b.email));
+
+  // show self even if transiently disconnected
+  const me = presenceSelf();
+  if(!list.find(p=>p.id===me.id)){ presence.set(me.id, { ...me, at: Date.now() }); list.unshift({ ...me, at: Date.now() }); }
+
+  const avatars = document.getElementById('presenceAvatars');
+  const count = document.getElementById('presenceCount');
+  const tooltip = document.getElementById('presenceList');
+  avatars.innerHTML = '';
+  tooltip.innerHTML = '';
+
+  const maxBubbles = 4;
+  list.slice(0,maxBubbles).forEach(p=>{
+    const span = document.createElement('span');
+    span.className = 'avatar inline-flex items-center justify-center h-7 w-7 rounded-full bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 text-[11px] font-semibold ring-2 ring-white';
+    span.title = p.name || p.email;
+    span.textContent = initialsForUser(p.name, p.email);
+    const dot = document.createElement('span'); dot.className = 'presence-dot';
+    span.appendChild(dot);
+    avatars.appendChild(span);
+
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-2';
+    row.innerHTML = `
+      <div class="relative inline-flex items-center justify-center h-6 w-6 rounded-full bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 text-[10px] font-semibold">
+        ${initialsForUser(p.name, p.email)}<span class="presence-dot" style="right:-1px;bottom:-1px;width:8px;height:8px"></span>
+      </div>
+      <div class="truncate">${p.name || p.email}</div>
+    `;
+    tooltip.appendChild(row);
+  });
+
+  if(list.length>maxBubbles){
+    const extra = list.length-maxBubbles;
+    const more = document.createElement('span');
+    more.className = 'avatar inline-flex items-center justify-center h-7 w-7 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-[11px] font-semibold ring-2 ring-white';
+    more.textContent = `+${extra}`;
+    avatars.appendChild(more);
+  }
+  count.textContent = list.length===1 ? '1 online' : `${list.length} online`;
+}
+
+function liveUrl(){
+  try {
+    const base = new URL(API_BASE);
+    base.pathname = (base.pathname.replace(/\/+$/,'') + '/live').replace(/\/{2,}/g,'/');
+    base.search = `?ws=${encodeURIComponent(WORKSPACE_ID)}&token=${encodeURIComponent(sessionJWT||'')}`;
+    base.protocol = base.protocol.replace('http','ws');
+    return base.toString();
+  } catch { return null; }
+}
+function liveConnect(){
+  const url = liveUrl(); if(!url) { renderPresence(); return; }
+  try{ liveSocket = new WebSocket(url); } catch { renderPresence(); return; }
+
+  liveSocket.onopen = () => {
+    const me = presenceSelf();
+    presence.set(me.id, { ...me, at: Date.now() });
+    renderPresence();
+    // announce join
+    liveSend({ type:'presence/join', ws: WORKSPACE_ID, by: me.id, name: me.name, email: me.email, at: Date.now() });
+    heartbeatTimer = setInterval(()=> {
+      const me2 = presenceSelf();
+      presence.set(me2.id, { ...me2, at: Date.now() });
+      renderPresence();
+      liveSend({ type:'presence/beat', ws: WORKSPACE_ID, by: me2.id, at: Date.now() });
+    }, 20000);
+  };
+  liveSocket.onmessage = (ev) => {
+    let msg=null; try{ msg = JSON.parse(ev.data||'{}'); }catch{}
+    if(!msg || msg.ws !== WORKSPACE_ID) return;
+
+    if (msg.type === 'presence/join' || msg.type === 'presence/beat'){
+      const id = msg.by; if(!id) return;
+      presence.set(id, { id, name: msg.name||'', email: msg.email||'', at: Date.now() });
+      renderPresence(); return;
+    }
+    if (msg.type === 'presence/leave'){
+      presence.delete(msg.by); renderPresence(); return;
+    }
+    if (msg.type === 'op'){ applyOp(msg); return; }
+  };
+  liveSocket.onclose = () => {
+    if (heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer=null; }
+    setTimeout(()=>{ renderPresence(); }, 0);
+  };
+}
+function liveSend(obj){
+  if(!liveSocket || liveSocket.readyState !== 1) return;
+  try { liveSocket.send(JSON.stringify(obj)); } catch {}
+}
+function presenceLeave(){
+  const me = presenceSelf();
+  liveSend({ type:'presence/leave', ws: WORKSPACE_ID, by: me.id, at: Date.now() });
+}
+
+/*******************
+ *  TABS + BOARD    *
  *******************/
 function renderTabs(){
   const tabsContainer = document.getElementById('tabs');
@@ -513,18 +663,27 @@ function renderTabs(){
       tabData[newName] = tabData[name];
       delete tabData[name];
       if (activeTab === name) activeTab = newName;
-      saveTabsToStorage();
-      renderTabs();
-      switchTab(activeTab);
-      saveTabsToCloud();
+      saveTabsToStorage(); renderTabs(); switchTab(activeTab);
+      liveOp({ kind:'tab.rename', from:name, to:newName });
     };
     tabBtn.oncontextmenu = (e) => { e.preventDefault(); deleteTab(name); };
     tabsContainer.appendChild(tabBtn);
   });
 }
 function promptNewTab(){ const name = prompt('Enter tab name:'); if(!name || !name.trim()) return; addTab(name.trim()); }
-function addTab(name){ if(tabData[name]) return switchTab(name); tabData[name] = { todo:[], inprogress:[], done:[] }; saveTabsToStorage(); renderTabs(); switchTab(name); saveTabsToCloud(); }
-function deleteTab(name){ if(!confirm(`Delete tab "${name}" and all its tasks?`)) return; delete tabData[name]; if(activeTab===name) activeTab = Object.keys(tabData)[0]||null; saveTabsToStorage(); renderTabs(); renderBoard(); saveTabsToCloud(); }
+function addTab(name){
+  if(tabData[name]) return switchTab(name);
+  tabData[name] = { todo:[], inprogress:[], done:[] };
+  saveTabsToStorage(); renderTabs(); switchTab(name);
+  liveOp({ kind:'tab.create', name });
+}
+function deleteTab(name){
+  if(!confirm(`Delete tab "${name}" and all its tasks?`)) return;
+  delete tabData[name];
+  if(activeTab===name) activeTab = Object.keys(tabData)[0]||null;
+  saveTabsToStorage(); renderTabs(); renderBoard();
+  liveOp({ kind:'tab.delete', name });
+}
 
 function switchTab(tabName){
   if(!tabData[tabName]) return;
@@ -536,9 +695,9 @@ function switchTab(tabName){
 }
 
 function ensureAtLeastOneTask(){
-  const cols = tabData[activeTab];
-  if(!cols) return;
-  if((cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0)===0){
+  const cols = tabData[activeTab]; if(!cols) return;
+  const count = (cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0);
+  if(count===0){
     const id = `task-${cryptoRandom()}`;
     cols.todo.push({ id, content:'', dueDate:'', priority:'Medium', pos: 1, upd: Date.now(), by: currentUserKey });
   }
@@ -600,10 +759,10 @@ function createTaskElement(id, content='', dueDate='', priority='Medium', column
   });
   wrapper.addEventListener('dragend', () => { wrapper.classList.remove('dragging'); });
 
-  editable.addEventListener('input', ()=>{ togglePlaceholder(); persistTaskEdits(id, { content: editable.innerText.trim() }); saveTabsToCloud(); });
-  editable.addEventListener('blur', ()=> { persistTaskEdits(id, { content: editable.innerText.trim() }); saveTabsToCloud(); });
-  dateInput.addEventListener('change', ()=> { persistTaskEdits(id, { dueDate: normalizeDateString(dateInput.value) }); saveTabsToCloud(); });
-  prioritySelect.addEventListener('change', ()=> { persistTaskEdits(id, { priority: prioritySelect.value || 'Medium' }); saveTabsToCloud(); });
+  editable.addEventListener('input', ()=>{ togglePlaceholder(); persistTaskEdits(id, { content: editable.innerText.trim() }); });
+  editable.addEventListener('blur', ()=> persistTaskEdits(id, { content: editable.innerText.trim() }));
+  dateInput.addEventListener('change', ()=> persistTaskEdits(id, { dueDate: normalizeDateString(dateInput.value) }));
+  prioritySelect.addEventListener('change', ()=> persistTaskEdits(id, { priority: prioritySelect.value || 'Medium' }));
 
   row.appendChild(dateInput); row.appendChild(prioritySelect);
   wrapper.appendChild(editable); wrapper.appendChild(placeholder); wrapper.appendChild(row); wrapper.appendChild(deleteBtn);
@@ -635,12 +794,6 @@ function computeInsertIndex(colEl, indicator){
   }
   return siblings.length;
 }
-function newPosBetween(prev, next){
-  const A = isFinite(prev) ? Number(prev) : 0;
-  const B = isFinite(next) ? Number(next) : A + 2;
-  if (B - A > 1e-6) return A + (B-A)/2;
-  return A + 0.000001;
-}
 function commitReorder(taskId, fromCol, toCol, insertIndex){
   if(!activeTab || !tabData[activeTab]) return;
   if(currentRole==='viewer') return;
@@ -654,18 +807,25 @@ function commitReorder(taskId, fromCol, toCol, insertIndex){
 
   const prev = target[insertIndex-1]?.pos;
   const next = target[insertIndex]?.pos;
-  moved.pos = newPosBetween(prev, next);
-  moved.upd = Date.now();
-  moved.by = currentUserKey;
+  moved.pos = (isFinite(prev)||isFinite(next)) ? ( (isFinite(prev)?Number(prev):0) + (isFinite(next)?Number(next):( (isFinite(prev)?Number(prev):0)+2 )) )/2 : 1;
+  moved.upd = Date.now(); moved.by = currentUserKey;
   target.splice(insertIndex, 0, moved);
   if(!isFinite(prev) || !isFinite(next) || Math.abs((next||moved.pos)-(prev||0)) < 1e-6){ target.forEach((t,i)=> t.pos=i+1); }
-  saveTabsToStorage();
-  renderBoard();
-  saveTabsToCloud();
+
+  saveTabsToStorage(); renderBoard();
+  // Live op + snapshot
+  liveOp({
+    kind:'task.move',
+    fromTab: activeTab, fromCol,
+    toTab: activeTab, toCol,
+    id: taskId,
+    insertIndex,
+    newPos: moved.pos
+  });
 }
 
 /*******************
- *  PERSIST HELPERS
+ *  Mutators (emit ops)
  *******************/
 function persistTaskEdits(taskId, patch){
   if(!activeTab || !tabData[activeTab]) return;
@@ -676,6 +836,8 @@ function persistTaskEdits(taskId, patch){
     if(idx!==-1){
       if('dueDate' in patch) patch.dueDate = normalizeDateString(patch.dueDate);
       list[idx] = { ...list[idx], ...patch, upd: Date.now(), by: currentUserKey };
+      // Live op + snapshot
+      liveOp({ kind:'task.update', tab: activeTab, col, id: taskId, patch });
       break;
     }
   }
@@ -689,7 +851,8 @@ function removeTaskById(taskId){
     const idx = list.findIndex(t=>t.id===taskId);
     if(idx!==-1){ list.splice(idx,1); break; }
   }
-  saveTabsToStorage(); renderBoard(); saveTabsToCloud();
+  saveTabsToStorage(); renderBoard();
+  liveOp({ kind:'task.delete', tab: activeTab, id: taskId });
 }
 function clearAllTasks(){ if(!activeTab) return; if(currentRole==='viewer') return; if(!confirm('Clear all tasks in this tab?')) return; tabData[activeTab] = { todo:[], inprogress:[], done:[] }; saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
 function addNewTask(){
@@ -697,139 +860,17 @@ function addNewTask(){
   if(!activeTab){ const def='Click to edit'; if(!tabData[def]) tabData[def]={ todo:[], inprogress:[], done:[] }; activeTab=def; renderTabs(); }
   const id = `task-${cryptoRandom()}`; const now = Date.now();
   const t = { id, content:'', dueDate:'', priority:'Medium', pos: (tabData[activeTab].todo.slice(-1)[0]?.pos||0)+1, upd: now, by: currentUserKey };
-  tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard(); saveTabsToCloud();
+  tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard();
+  liveOp({ kind:'task.create', tab: activeTab, col:'todo', task: t });
 }
 
 /*******************
- *  PRESENCE
- *******************/
-function presenceSelf(){
-  const email = authedUser?.email_addresses?.[0]?.email_address || '';
-  const name = displayNameFor(authedUser) || email || 'You';
-  return { id: currentUserKey || email || 'me', name, email };
-}
-function renderPresence(){
-  const list = Array.from(presence.values())
-    .filter(p => Date.now() - (p.at||0) < 30000)
-    .sort((a,b)=> (a.name||a.email||'').localeCompare(b.name||b.email||''));
-
-  const avatars = document.getElementById('presenceAvatars');
-  const count = document.getElementById('presenceCount');
-  const tooltip = document.getElementById('presenceList');
-  avatars.innerHTML = '';
-  tooltip.innerHTML = '';
-
-  const maxBubbles = 4;
-  list.slice(0, maxBubbles).forEach(p => {
-    const span = document.createElement('span');
-    span.className = 'avatar inline-flex items-center justify-center h-7 w-7 rounded-full bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 text-[11px] font-semibold ring-2 ring-white';
-    span.title = p.name || p.email;
-    span.textContent = initialsForUser(p.name, p.email);
-    const dot = document.createElement('span'); dot.className = 'presence-dot';
-    span.appendChild(dot);
-    avatars.appendChild(span);
-
-    const row = document.createElement('div');
-    row.className = 'flex items-center gap-2';
-    row.innerHTML = `
-      <div class="relative inline-flex items-center justify-center h-6 w-6 rounded-full bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 text-[10px] font-semibold">
-        ${initialsForUser(p.name, p.email)}<span class="presence-dot" style="right:-1px;bottom:-1px;width:8px;height:8px"></span>
-      </div>
-      <div class="truncate">${p.name || p.email}</div>
-    `;
-    tooltip.appendChild(row);
-  });
-
-  if (list.length > maxBubbles){
-    const extra = list.length - maxBubbles;
-    const more = document.createElement('span');
-    more.className = 'avatar inline-flex items-center justify-center h-7 w-7 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-[11px] font-semibold ring-2 ring-white';
-    more.textContent = `+${extra}`;
-    avatars.appendChild(more);
-  }
-  count.textContent = list.length === 1 ? '1 online' : `${list.length} online`;
-}
-function presenceJoin(){
-  const me = presenceSelf();
-  presence.set(me.id, { ...me, at: Date.now() });
-  renderPresence();
-  liveSend({ type:'presence/join', by: me.id, name: me.name, email: me.email, at: Date.now(), ws: WORKSPACE_ID });
-}
-function presenceHeartbeat(){
-  const me = presenceSelf();
-  presence.set(me.id, { ...me, at: Date.now() });
-  renderPresence();
-  liveSend({ type:'presence/beat', by: me.id, at: Date.now(), ws: WORKSPACE_ID });
-}
-function presenceLeave(){
-  const me = presenceSelf();
-  liveSend({ type:'presence/leave', by: me.id, at: Date.now(), ws: WORKSPACE_ID });
-}
-
-/*******************
- *  LIVE SOCKET
- *******************/
-function liveUrl(){
-  try {
-    const base = new URL(API_BASE);
-    base.pathname = (base.pathname.replace(/\/+$/,'') + '/live').replace(/\/{2,}/g,'/');
-    base.search = `?ws=${encodeURIComponent(WORKSPACE_ID)}&token=${encodeURIComponent(sessionJWT||'')}`;
-    base.protocol = base.protocol.replace('http','ws');
-    return base.toString();
-  } catch { return null; }
-}
-function liveConnect(){
-  const url = liveUrl(); if(!url) { renderPresence(); return; }
-  try{
-    liveSocket = new WebSocket(url);
-  } catch { renderPresence(); return; }
-
-  liveSocket.onopen = () => {
-    presenceJoin();
-    heartbeatTimer = setInterval(presenceHeartbeat, 20000);
-  };
-  liveSocket.onmessage = (ev) => {
-    try{
-      const msg = JSON.parse(ev.data||'{}');
-      handleLiveMessage(msg);
-    }catch{}
-  };
-  liveSocket.onclose = () => {
-    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-    setTimeout(()=>{ renderPresence(); }, 0);
-  };
-}
-function liveSend(obj){
-  if(!liveSocket || liveSocket.readyState !== 1) return;
-  try { liveSocket.send(JSON.stringify(obj)); } catch {}
-}
-function handleLiveMessage(msg){
-  if(!msg || typeof msg !== 'object') return;
-  if (msg.ws && msg.ws !== WORKSPACE_ID) return;
-
-  if (msg.type === 'presence/join' || msg.type === 'presence/beat'){
-    const id = msg.by || msg.user_id || msg.id; if(!id) return;
-    const name = msg.name || '';
-    const email = msg.email || '';
-    presence.set(id, { id, name, email, at: Date.now() });
-    renderPresence();
-    return;
-  }
-  if (msg.type === 'presence/leave'){
-    const id = msg.by; if(!id) return;
-    presence.delete(id);
-    renderPresence();
-    return;
-  }
-}
-
-/*******************
- *  EXPORT
+ *  EXPORT          *
  *******************/
 function exportBoardAsPDF(){ const board = document.getElementById('board'); html2pdf().set({ margin:.5, filename:'Solara-Board.pdf', image:{type:'jpeg',quality:.98}, html2canvas:{scale:2}, jsPDF:{unit:'in', format:'letter', orientation:'landscape'} }).from(board).save(); }
 
 /*******************
- *  BOOT
+ *  BOOT            *
  *******************/
 function maybeAttachLastWorkspace(){
   const url = new URL(location.href);
@@ -858,37 +899,22 @@ async function initialLoad(){
   if(!ok) return requireReauth();
 
   setReportsHref();
+  wireAuthButtons();
 
-  // Local bootstrap
-  tabData = loadTabsFromStorage();
-
-  // Prefer server copy when available (shared users!)
-  if (WORKSPACE_ID) {
-    const REMOTE = await fetchCloudTabs();
-    if (REMOTE && Object.keys(REMOTE).length) {
-      BASE = clone(REMOTE);
-      tabData = mergeTabs({}, tabData, REMOTE);
-      saveTabsToStorage();
-    } else {
-      BASE = clone(tabData);
-    }
-  }
-
+  // Load server snapshot first for shared users to see real data
+  const remote = await fetchCloudTabs();
+  tabData = Object.keys(remote).length ? remote : loadTabsFromStorage();
+  tabData = migrateTaskShapes(tabData);
   if(Object.keys(tabData).length===0){ const def='Click to edit'; tabData[def] = { todo:[], inprogress:[], done:[] }; }
   activeTab = Object.keys(tabData)[0];
   renderTabs();
   switchTab(activeTab);
 
-  wireAuthButtons();
-
-  // Start background polling for others' edits (quiet)
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(pollCloud, 5000);
-
-  // Presence UI
+  // Presence + live
   renderPresence();
   liveConnect();
 }
+
 document.addEventListener('DOMContentLoaded', initialLoad);
 </script>
 </body>
