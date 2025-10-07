@@ -16,7 +16,6 @@
     .drop-indicator { height: .5rem; border-radius: .25rem; background: rgba(99,102,241,.45); margin: .25rem 0; display: none; }
     .show-drop .drop-indicator { display: block; }
     .date-badge { font-variant-numeric: tabular-nums; }
-    /* Presence bubbles */
     .presence-dot { position:absolute; right:-2px; bottom:-2px; width:10px; height:10px; border-radius:999px; background:#10b981; border:2px solid white; }
     .avatar { position:relative; }
     .tooltip { position:absolute; top:100%; right:0; margin-top:.5rem; display:none; }
@@ -25,7 +24,6 @@
 </head>
 <body class="flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
 
-  <!-- Workspace hint banner (only shows if no ws param found) -->
   <div id="wsBanner" class="hidden bg-amber-50 text-amber-900 border-b border-amber-200 px-6 py-2 text-sm">
     No workspace selected. <a class="underline font-medium" href="workspace.html">Go to Workspaces</a>
   </div>
@@ -53,7 +51,7 @@
         </div>
       </div>
 
-      <!-- Signed-in user -->
+      <!-- User -->
       <div id="userArea" class="relative">
         <button id="userButton" class="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
           <span id="avatar" class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-semibold">?</span>
@@ -92,7 +90,7 @@
     </div>
   </nav>
 
-  <!-- Main Board -->
+  <!-- Board -->
   <main class="p-6 flex-1 overflow-y-auto">
     <div id="board" class="grid grid-cols-1 md:grid-cols-3 gap-6">
       <div id="todo" class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg shadow-sm" data-col="todo">
@@ -131,7 +129,7 @@
     <footer class="text-center text-xs text-gray-500 dark:text-gray-400 px-6 py-3 border-t border-gray-200 dark:border-gray-700">© 2025 ZenLock Group (ZLG). All rights reserved.</footer>
   </div>
 
-  <!-- Members Manager Modal -->
+  <!-- Members Modal (unchanged UI) -->
   <div id="membersModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center">
     <div class="absolute inset-0 bg-black/40" onclick="closeMembers()"></div>
     <div class="relative w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 shadow-xl">
@@ -153,7 +151,7 @@
 /*************************
  *  CONFIG               *
  *************************/
-const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev"; // ← your worker origin
+const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev";
 const apiUrl = (p) => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
 
 /**************
@@ -172,9 +170,7 @@ let currentRole = 'owner';
 /* Realtime */
 let liveSocket = null;
 let heartbeatTimer = null;
-
-/* Presence map: userId -> { id, name, email, at } */
-const presence = new Map();
+const presence = new Map(); // userId -> { id, name, email, at }
 
 /*******************
  *  UTILITIES       *
@@ -288,7 +284,7 @@ function wireAuthButtons(){
     try{ if(sessionJWT){ await fetch(apiUrl('logout'), { method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}` } }).catch(()=>{}); } }
     finally{ requireReauth(); }
   };
-  document.getElementById('addUserBtn').onclick = async () => { openMembers(); };
+  document.getElementById('addUserBtn').onclick = () => { openMembers(); };
 }
 async function verifySessionAndHydrate(){
   sessionJWT = getSessionJWT();
@@ -315,23 +311,20 @@ async function verifySessionAndHydrate(){
 }
 
 /*******************
- *  MEMBERS (UI + API) *
+ *  MEMBERS (unchanged API) *
  *******************/
 function openMembers(){ document.getElementById('membersModal').classList.remove('hidden'); loadMembers(); }
 function closeMembers(){ document.getElementById('membersModal').classList.add('hidden'); }
-
 document.addEventListener('DOMContentLoaded', ()=>{
   const btn = document.getElementById('manageBtn');
   if(btn){ btn.addEventListener('click', ()=>{ if(!WORKSPACE_ID) return alert('Open a workspace to manage members.'); openMembers(); }); }
 });
-
 async function listShares(){
   if(!sessionJWT) return [];
   const url = apiUrl('shares') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
   const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
   if(!res.ok) { console.warn('listShares failed', await res.text()); return []; }
   const data = await res.json();
-  // Determine role of current user
   currentRole = 'owner';
   const me = (authedUser?.email_addresses?.[0]?.email_address||'').toLowerCase();
   const ownerRow = await fetch(apiUrl('workspaces') , { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}).then(r=>r.ok?r.json():{workspaces:[]}).catch(()=>({workspaces:[]}));
@@ -356,7 +349,6 @@ async function deleteShare(id){
   const res = await fetch(apiUrl(`shares/${id}`), { method:'DELETE', headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
   return res;
 }
-
 async function loadMembers(){
   const list = document.getElementById('membersList');
   list.innerHTML = '<div class="py-6 text-sm text-gray-500">Loading…</div>';
@@ -434,12 +426,27 @@ async function postCloudTabs(tabs){
 const saveTabsToCloud = debounce(async ()=>{
   if(currentRole==='viewer') return;
   await postCloudTabs(tabData);
-}, 500);
+}, 600);
 
 /*******************
  *  OP-BASED LIVE   *
  *******************/
 function opId(){ try{ return crypto.randomUUID(); }catch{ return Math.random().toString(36).slice(2); } }
+
+// per-task debounced update sender (prevents keystroke storms)
+const debouncers = new Map();
+function sendUpdateDebounced(tab, col, id, patch){
+  const key = `${tab}|${col}|${id}`;
+  let fn = debouncers.get(key);
+  if(!fn){
+    fn = debounce((latestPatch) => {
+      liveOp({ kind:'task.update', tab, col, id, patch: latestPatch });
+      saveTabsToCloud();
+    }, 150);
+    debouncers.set(key, fn);
+  }
+  fn(patch);
+}
 
 function liveOp(op){
   if(!WORKSPACE_ID) return;
@@ -455,11 +462,9 @@ function liveOp(op){
     },
     ...op
   };
-  // Optimistic apply for snappy UX
+  // Optimistic: apply but DO NOT re-render whole board for updates
   applyOp(msg, { fromSelf:true });
   liveSend(msg);
-  // Checkpoint
-  saveTabsToCloud();
 }
 
 function applyOp(msg, { fromSelf=false } = {}){
@@ -473,7 +478,10 @@ function applyOp(msg, { fromSelf=false } = {}){
       const i = list.findIndex(t=>t.id===id);
       if(i===-1) break;
       list[i] = { ...list[i], ...patch, upd: Date.now(), by: msg.by || list[i].by };
-      break;
+      // Minimal DOM patch (no full render)
+      if (activeTab === tab) patchTaskDOM(id, patch);
+      if (!fromSelf) saveTabsToStorage();
+      return; // avoid board re-render
     }
     case 'task.create': {
       const { tab, col, task } = msg;
@@ -532,11 +540,30 @@ function applyOp(msg, { fromSelf=false } = {}){
   }
 
   saveTabsToStorage();
+  // Only re-render board/tabs on structural changes, not typing
   renderTabs(); switchTab(activeTab);
 }
 
+/* Patch a single task node in place (avoid losing caret) */
+function patchTaskDOM(id, patch){
+  const el = document.getElementById(id);
+  if(!el) return;
+  if ('content' in patch) {
+    const ed = el.querySelector('.editable');
+    if (ed && document.activeElement !== ed) { ed.innerText = patch.content || ''; }
+  }
+  if ('dueDate' in patch) {
+    const d = el.querySelector('input[type="date"]');
+    if (d) d.value = normalizeDateString(patch.dueDate) || '';
+  }
+  if ('priority' in patch) {
+    const s = el.querySelector('select');
+    if (s) s.value = patch.priority || 'Medium';
+  }
+}
+
 /*******************
- *  PRESENCE        *
+ *  PRESENCE (Durable Object backed)
  *******************/
 function presenceSelf(){
   const email = authedUser?.email_addresses?.[0]?.email_address || '';
@@ -547,16 +574,13 @@ function renderPresence(){
   const list = Array.from(presence.values())
     .filter(p => Date.now() - (p.at||0) < 30000)
     .sort((a,b)=> (a.name||a.email).localeCompare(b.name||b.email));
-
-  // show self even if transiently disconnected
   const me = presenceSelf();
   if(!list.find(p=>p.id===me.id)){ presence.set(me.id, { ...me, at: Date.now() }); list.unshift({ ...me, at: Date.now() }); }
 
   const avatars = document.getElementById('presenceAvatars');
   const count = document.getElementById('presenceCount');
   const tooltip = document.getElementById('presenceList');
-  avatars.innerHTML = '';
-  tooltip.innerHTML = '';
+  avatars.innerHTML = ''; tooltip.innerHTML = '';
 
   const maxBubbles = 4;
   list.slice(0,maxBubbles).forEach(p=>{
@@ -594,7 +618,7 @@ function liveUrl(){
     const base = new URL(API_BASE);
     base.pathname = (base.pathname.replace(/\/+$/,'') + '/live').replace(/\/{2,}/g,'/');
     base.search = `?ws=${encodeURIComponent(WORKSPACE_ID)}&token=${encodeURIComponent(sessionJWT||'')}`;
-    base.protocol = base.protocol.replace('http','ws');
+    base.protocol = base.protocol.replace('http','ws'); // http->ws, https->wss
     return base.toString();
   } catch { return null; }
 }
@@ -606,7 +630,6 @@ function liveConnect(){
     const me = presenceSelf();
     presence.set(me.id, { ...me, at: Date.now() });
     renderPresence();
-    // announce join
     liveSend({ type:'presence/join', ws: WORKSPACE_ID, by: me.id, name: me.name, email: me.email, at: Date.now() });
     heartbeatTimer = setInterval(()=> {
       const me2 = presenceSelf();
@@ -627,11 +650,14 @@ function liveConnect(){
     if (msg.type === 'presence/leave'){
       presence.delete(msg.by); renderPresence(); return;
     }
-    if (msg.type === 'op'){ applyOp(msg); return; }
+    if (msg.type === 'op'){
+      applyOp(msg, { fromSelf: msg.by === currentUserKey });
+      return;
+    }
   };
   liveSocket.onclose = () => {
     if (heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer=null; }
-    setTimeout(()=>{ renderPresence(); }, 0);
+    setTimeout(renderPresence, 0);
   };
 }
 function liveSend(obj){
@@ -665,6 +691,7 @@ function renderTabs(){
       if (activeTab === name) activeTab = newName;
       saveTabsToStorage(); renderTabs(); switchTab(activeTab);
       liveOp({ kind:'tab.rename', from:name, to:newName });
+      saveTabsToCloud();
     };
     tabBtn.oncontextmenu = (e) => { e.preventDefault(); deleteTab(name); };
     tabsContainer.appendChild(tabBtn);
@@ -675,16 +702,15 @@ function addTab(name){
   if(tabData[name]) return switchTab(name);
   tabData[name] = { todo:[], inprogress:[], done:[] };
   saveTabsToStorage(); renderTabs(); switchTab(name);
-  liveOp({ kind:'tab.create', name });
+  liveOp({ kind:'tab.create', name }); saveTabsToCloud();
 }
 function deleteTab(name){
   if(!confirm(`Delete tab "${name}" and all its tasks?`)) return;
   delete tabData[name];
   if(activeTab===name) activeTab = Object.keys(tabData)[0]||null;
   saveTabsToStorage(); renderTabs(); renderBoard();
-  liveOp({ kind:'tab.delete', name });
+  liveOp({ kind:'tab.delete', name }); saveTabsToCloud();
 }
-
 function switchTab(tabName){
   if(!tabData[tabName]) return;
   activeTab = tabName;
@@ -693,7 +719,6 @@ function switchTab(tabName){
   if(activeBtn){ activeBtn.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'); }
   renderBoard();
 }
-
 function ensureAtLeastOneTask(){
   const cols = tabData[activeTab]; if(!cols) return;
   const count = (cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0);
@@ -702,7 +727,6 @@ function ensureAtLeastOneTask(){
     cols.todo.push({ id, content:'', dueDate:'', priority:'Medium', pos: 1, upd: Date.now(), by: currentUserKey });
   }
 }
-
 function renderBoard(){
   const columns = COLS;
   columns.forEach(col => {
@@ -735,7 +759,6 @@ function renderBoard(){
     (data[col]||[]).sort((a,b)=> (a.pos||0)-(b.pos||0)).forEach(t => { colEl.appendChild(createTaskElement(t.id, t.content, t.dueDate, t.priority, col, t.pos)); });
   });
 }
-
 function createTaskElement(id, content='', dueDate='', priority='Medium', column, pos){
   const wrapper = document.createElement('div');
   wrapper.id = id; wrapper.setAttribute('data-task','1'); wrapper.draggable = currentRole!=='viewer'; wrapper.className = 'relative p-3 rounded bg-white dark:bg-gray-700 shadow cursor-move mb-2'; wrapper.setAttribute('data-column', column);
@@ -759,18 +782,55 @@ function createTaskElement(id, content='', dueDate='', priority='Medium', column
   });
   wrapper.addEventListener('dragend', () => { wrapper.classList.remove('dragging'); });
 
-  editable.addEventListener('input', ()=>{ togglePlaceholder(); persistTaskEdits(id, { content: editable.innerText.trim() }); });
-  editable.addEventListener('blur', ()=> persistTaskEdits(id, { content: editable.innerText.trim() }));
-  dateInput.addEventListener('change', ()=> persistTaskEdits(id, { dueDate: normalizeDateString(dateInput.value) }));
-  prioritySelect.addEventListener('change', ()=> persistTaskEdits(id, { priority: prioritySelect.value || 'Medium' }));
+  editable.addEventListener('input', ()=>{
+    togglePlaceholder();
+    // local change only; debounced op emit
+    const patch = { content: editable.innerText.trim() };
+    persistTaskLocal(id, patch);
+    const col = wrapper.getAttribute('data-column');
+    sendUpdateDebounced(activeTab, col, id, patch);
+  });
+  editable.addEventListener('blur', ()=>{
+    const patch = { content: editable.innerText.trim() };
+    persistTaskLocal(id, patch);
+    const col = wrapper.getAttribute('data-column');
+    liveOp({ kind:'task.update', tab: activeTab, col, id, patch });
+    saveTabsToCloud();
+  });
+  dateInput.addEventListener('change', ()=>{
+    const patch = { dueDate: normalizeDateString(dateInput.value) };
+    persistTaskLocal(id, patch);
+    const col = wrapper.getAttribute('data-column');
+    liveOp({ kind:'task.update', tab: activeTab, col, id, patch }); saveTabsToCloud();
+  });
+  prioritySelect.addEventListener('change', ()=>{
+    const patch = { priority: prioritySelect.value || 'Medium' };
+    persistTaskLocal(id, patch);
+    const col = wrapper.getAttribute('data-column');
+    liveOp({ kind:'task.update', tab: activeTab, col, id, patch }); saveTabsToCloud();
+  });
 
   row.appendChild(dateInput); row.appendChild(prioritySelect);
   wrapper.appendChild(editable); wrapper.appendChild(placeholder); wrapper.appendChild(row); wrapper.appendChild(deleteBtn);
   togglePlaceholder();
   return wrapper;
 }
+function persistTaskLocal(taskId, patch){
+  if(!activeTab || !tabData[activeTab]) return;
+  if(currentRole==='viewer') return;
+  for(const col of COLS){
+    const list = tabData[activeTab][col]||[];
+    const idx = list.findIndex(t=>t.id===taskId);
+    if(idx!==-1){
+      if('dueDate' in patch) patch.dueDate = normalizeDateString(patch.dueDate);
+      list[idx] = { ...list[idx], ...patch, upd: Date.now(), by: currentUserKey };
+      break;
+    }
+  }
+  saveTabsToStorage();
+}
 
-// ---- Precise reorder helpers ----
+// ---- reorder helpers ----
 function clearDragContext(){ dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null }; }
 function getDragAfterElement(container, y){
   const draggableElements = [...container.querySelectorAll('[data-task]:not(.dragging)')];
@@ -813,55 +873,8 @@ function commitReorder(taskId, fromCol, toCol, insertIndex){
   if(!isFinite(prev) || !isFinite(next) || Math.abs((next||moved.pos)-(prev||0)) < 1e-6){ target.forEach((t,i)=> t.pos=i+1); }
 
   saveTabsToStorage(); renderBoard();
-  // Live op + snapshot
-  liveOp({
-    kind:'task.move',
-    fromTab: activeTab, fromCol,
-    toTab: activeTab, toCol,
-    id: taskId,
-    insertIndex,
-    newPos: moved.pos
-  });
-}
-
-/*******************
- *  Mutators (emit ops)
- *******************/
-function persistTaskEdits(taskId, patch){
-  if(!activeTab || !tabData[activeTab]) return;
-  if(currentRole==='viewer') return;
-  for(const col of COLS){
-    const list = tabData[activeTab][col]||[];
-    const idx = list.findIndex(t=>t.id===taskId);
-    if(idx!==-1){
-      if('dueDate' in patch) patch.dueDate = normalizeDateString(patch.dueDate);
-      list[idx] = { ...list[idx], ...patch, upd: Date.now(), by: currentUserKey };
-      // Live op + snapshot
-      liveOp({ kind:'task.update', tab: activeTab, col, id: taskId, patch });
-      break;
-    }
-  }
-  saveTabsToStorage();
-}
-function removeTaskById(taskId){
-  if(!activeTab || !tabData[activeTab]) return;
-  if(currentRole==='viewer') return;
-  for(const col of COLS){
-    const list = tabData[activeTab][col]||[];
-    const idx = list.findIndex(t=>t.id===taskId);
-    if(idx!==-1){ list.splice(idx,1); break; }
-  }
-  saveTabsToStorage(); renderBoard();
-  liveOp({ kind:'task.delete', tab: activeTab, id: taskId });
-}
-function clearAllTasks(){ if(!activeTab) return; if(currentRole==='viewer') return; if(!confirm('Clear all tasks in this tab?')) return; tabData[activeTab] = { todo:[], inprogress:[], done:[] }; saveTabsToStorage(); renderBoard(); saveTabsToCloud(); }
-function addNewTask(){
-  if(currentRole==='viewer') return;
-  if(!activeTab){ const def='Click to edit'; if(!tabData[def]) tabData[def]={ todo:[], inprogress:[], done:[] }; activeTab=def; renderTabs(); }
-  const id = `task-${cryptoRandom()}`; const now = Date.now();
-  const t = { id, content:'', dueDate:'', priority:'Medium', pos: (tabData[activeTab].todo.slice(-1)[0]?.pos||0)+1, upd: now, by: currentUserKey };
-  tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard();
-  liveOp({ kind:'task.create', tab: activeTab, col:'todo', task: t });
+  liveOp({ kind:'task.move', fromTab: activeTab, fromCol, toTab: activeTab, toCol, id: taskId, insertIndex, newPos: moved.pos });
+  saveTabsToCloud();
 }
 
 /*******************
@@ -901,7 +914,7 @@ async function initialLoad(){
   setReportsHref();
   wireAuthButtons();
 
-  // Load server snapshot first for shared users to see real data
+  // Server snapshot first
   const remote = await fetchCloudTabs();
   tabData = Object.keys(remote).length ? remote : loadTabsFromStorage();
   tabData = migrateTaskShapes(tabData);
@@ -914,7 +927,6 @@ async function initialLoad(){
   renderPresence();
   liveConnect();
 }
-
 document.addEventListener('DOMContentLoaded', initialLoad);
 </script>
 </body>
