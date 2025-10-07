@@ -1,10 +1,3 @@
-<!-- =============================
-FILE: accept-invite.html (Solara v9 — complete)
-- Supports OLD worker (POST /shares/accept { workspace_id })
-- Also supports NEW worker (POST /shares/accept { token })
-- Handles missing session by redirecting with next=
-- Detects existing access and routes straight to workspace
-============================= -->
 <!DOCTYPE html>
 <html lang="en" class="h-full">
 <head>
@@ -51,7 +44,7 @@ FILE: accept-invite.html (Solara v9 — complete)
 <script>
 // ================= CONFIG =================
 const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev"; // Worker origin
-const apiUrl = p => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+,'');
+const apiUrl = (p) => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
 
 // ================ HELPERS =================
 const qs = k => new URL(location.href).searchParams.get(k);
@@ -93,21 +86,27 @@ async function userAlreadyHasAccess(jwt, ws){
   }catch{ return false }
 }
 
+// Old worker path: accepts with {workspace_id}
 async function acceptOldWorker(jwt, ws){
-  // Old worker expects { workspace_id }
-  const res = await fetch(apiUrl('shares/accept'), {
-    method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${jwt}` },
+  return await fetch(apiUrl('shares/accept'), {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${jwt}` },
     body: JSON.stringify({ workspace_id: ws })
   });
-  return res;
 }
+
+// New worker path: accepts with {token}
 async function acceptNewWorker(jwt, token){
-  // New worker expects { token } (and may ignore ws)
-  const res = await fetch(apiUrl('shares/accept'), {
-    method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${jwt}` },
+  return await fetch(apiUrl('shares/accept'), {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${jwt}` },
     body: JSON.stringify({ token })
   });
-  return res;
+}
+
+function goToWorkspace(ws){
+  if(ws){ saveLastWS(ws); location.replace(`/workspace.html?ws=${encodeURIComponent(ws)}`); }
+  else { location.replace('/workspace.html'); }
 }
 
 async function main(){
@@ -127,9 +126,8 @@ async function main(){
   if(ws){
     setStatus('Checking workspace access…');
     if(await userAlreadyHasAccess(jwt, ws)){
-      saveLastWS(ws);
       setStatus(`<span class="text-green-600">You already have access.</span> Opening workspace…`);
-      setTimeout(()=> location.replace(`/workspace.html?ws=${encodeURIComponent(ws)}`), 400);
+      setTimeout(()=> goToWorkspace(ws), 350);
       return;
     }
   }
@@ -153,9 +151,8 @@ async function main(){
 
   if(res.ok){
     const destWs = ws || body?.workspace_id || qs('ws') || localStorage.getItem('solara_last_ws') || '';
-    if(destWs) saveLastWS(destWs);
     setStatus(`<span class="text-green-600">Success.</span> Redirecting to your workspace…`);
-    setTimeout(()=> location.replace(destWs ? `/workspace.html?ws=${encodeURIComponent(destWs)}` : '/workspace.html'), 600);
+    setTimeout(()=> goToWorkspace(destWs), 600);
     return;
   }
 
@@ -178,8 +175,7 @@ async function main(){
 document.getElementById('retryBtn').onclick = main;
 document.getElementById('openBtn').onclick = ()=>{
   const ws = qs('ws') || localStorage.getItem('solara_last_ws') || '';
-  if(ws) location.href = `/workspace.html?ws=${encodeURIComponent(ws)}`;
-  else location.href = `/workspace.html`;
+  goToWorkspace(ws);
 };
 
 document.addEventListener('DOMContentLoaded', main);
