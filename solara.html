@@ -288,7 +288,6 @@ async function fetchCloudTabs(){
     const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
     if(!res.ok) return null;
     const data = await res.json();
-    // server-owned updated_at -> Last synced
     if (data.updated_at){ lastSyncedISO = data.updated_at; formatLastSynced(); }
     return data.tabs || {};
   }catch{ return null; }
@@ -310,7 +309,6 @@ async function postCloudTabs(tabs){
 const saveTabsToCloud = debounce(async ()=>{
   if(!sessionJWT || !WORKSPACE_ID) return;
   if(currentRole==='viewer') return;
-  // pull-merge-push (prevents overwrite)
   const REM = await fetchCloudTabs();
   if(REM==null) return;
   const merged = mergeTabs(BASE, tabData, REM);
@@ -617,7 +615,11 @@ function clearAllTasks(){
 }
 function addNewTask(){
   if(currentRole==='viewer') return;
-  if(!activeTab){ const def='Click to edit'; if(!tabData[def]) tabData[def]={ todo:[],inprogress:[],done:[] }; activeTab=def; renderTabs(); }
+  if(!activeTab){
+    const def='Click to edit';
+    if(!tabData[def]) tabData[def]={ todo:[], inprogress:[], done:[] };
+    activeTab=def; renderTabs();
+  }
   const id=`task-${cryptoRandom()}`; const now=Date.now();
   const t={ id, content:'', dueDate:'', priority:'Medium', pos:(tabData[activeTab].todo.slice(-1)[0]?.pos||0)+1, upd:now, by:currentUserKey };
   tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard(); saveTabsToCloud();
@@ -631,7 +633,6 @@ function renderPresence(){
   const count   = document.getElementById('presenceCount');
   avatars.innerHTML = '';
   const list = [...presence.values()];
-  // show others only; if any online, hide count; else show "0 online"
   if (list.length === 0) { count.textContent = '0 online'; return; }
   count.textContent = '';
   const max=4;
@@ -712,7 +713,10 @@ async function initialLoad(){
 
   // Local bootstrap
   tabData = loadTabsFromStorage();
-  if(Object.keys(tabData).length===0){ const def='Click to edit'; tabData[def]={ todo:[],inprogress[],done:[] }; } // keep minimal fallback
+  if(Object.keys(tabData).length===0){
+    const def='Click to edit';
+    tabData[def]={ todo:[], inprogress:[], done:[] }; // <-- fixed line
+  }
   if(!activeTab) activeTab = Object.keys(tabData)[0];
   renderTabs(); switchTab(activeTab);
 
@@ -723,10 +727,19 @@ async function initialLoad(){
   // Start presence & sync timers
   renderPresence();
   await presenceBeat();
+  await presencePoll();              // immediate first poll so avatars appear right away
   setInterval(presenceBeat, BEAT_MS);
   setInterval(presencePoll, POLL_MS);
-  setInterval(async()=>{ // lightweight remote merge to stay fresh
-    const remote=await fetchCloudTabs(); if(remote){ const merged=mergeTabs(BASE, tabData, remote); if(JSON.stringify(merged)!==JSON.stringify(tabData)){ tabData=merged; BASE=clone(merged); saveTabsToStorage(); renderTabs(); switchTab(activeTab);} }
+
+  // keep tabs fresh
+  setInterval(async()=>{
+    const remote=await fetchCloudTabs();
+    if(remote){
+      const merged=mergeTabs(BASE, tabData, remote);
+      if(JSON.stringify(merged)!==JSON.stringify(tabData)){
+        tabData=merged; BASE=clone(merged); saveTabsToStorage(); renderTabs(); switchTab(activeTab);
+      }
+    }
   }, POLL_MS);
 
   formatLastSynced();
