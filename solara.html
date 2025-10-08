@@ -34,7 +34,7 @@
     </div>
 
     <div class="flex items-center gap-4">
-      <!-- Presence thumbnails (others only, count hidden when anyone is online) -->
+      <!-- Presence thumbnails (others only) -->
       <div class="relative">
         <button id="presenceBtn" class="flex -space-x-2">
           <span id="presenceAvatars" class="flex -space-x-2"></span>
@@ -132,7 +132,7 @@
     </div>
   </div>
 
-  <!-- Members Modal (simple list) -->
+  <!-- Members Modal -->
   <div id="membersModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center">
     <div class="absolute inset-0 bg-black/40" onclick="closeMembers()"></div>
     <div class="relative w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 shadow-xl">
@@ -143,16 +143,14 @@
         </button>
       </div>
 
-      <!-- (Optional) Invite row: owner only -->
-      <div id="inviteRow" class="flex gap-2 mb-3">
+      <!-- Invite row (owner only) -->
+      <div id="inviteRow" class="flex gap-2 mb-3 hidden">
         <input id="inviteEmail" type="email" placeholder="name@example.com" class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm"/>
         <button onclick="inviteMember()" class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 text-sm">Invite</button>
       </div>
 
-      <!-- Simple, aligned list -->
-      <div id="membersList" class="divide-y divide-gray-200 dark:divide-gray-700">
-        <!-- rows injected -->
-      </div>
+      <!-- Simple aligned list + owner controls on right -->
+      <div id="membersList" class="divide-y divide-gray-200 dark:divide-gray-700"></div>
     </div>
   </div>
 
@@ -231,7 +229,8 @@ document.addEventListener('click',(e)=>{ const m=document.getElementById('userMe
 document.getElementById('signOutBtn').onclick=()=>requireReauth();
 document.getElementById('addUserBtn').onclick=()=>openMembers();
 
-/******** PRESENCE (header avatars show others only; hide count if someone’s online) ********/
+/******** Presence (header) ********/
+document.getElementById('presenceBtn').onclick=()=> document.getElementById('presenceTooltip').classList.toggle('hidden');
 function presenceRender(){
   const others = Array.from(presence.values()).filter(p => p.id !== currentUserKey && Date.now() - (p.at||0) < 30000);
   const avatars = document.getElementById('presenceAvatars');
@@ -265,6 +264,7 @@ function liveUrl(){
     base.protocol=base.protocol.replace('http','ws'); return base.toString();
   }catch{ return null; }
 }
+let liveSocket=null, liveBeat=null;
 function liveConnect(){
   const u=liveUrl(); if(!u) return; let ws;
   try{ ws=new WebSocket(u); }catch{ return; }
@@ -352,7 +352,7 @@ function renderTabs(){
   });
 }
 function promptNewTab(){ if(currentRole==='viewer') return; const name=prompt('Enter tab name:'); if(!name||!name.trim()) return; addTab(name.trim()); }
-function addTab(name){ if(tabData[name]) return switchTab(name); tabData[name]={ todo:[], inprogress:[], done:[] }; renderTabs(); switchTab(name); pushTabs(); }
+function addTab(name){ if(tabData[name]) return switchTab(name); tabData[name]={ todo:[], inprogress[], done:[] }; renderTabs(); switchTab(name); pushTabs(); }
 function deleteTab(name){ if(currentRole==='viewer') return; if(!confirm(`Delete tab "${name}" and all its tasks?`)) return; delete tabData[name]; if(activeTab===name) activeTab=Object.keys(tabData)[0]||null; renderTabs(); renderBoard(); pushTabs(); }
 function switchTab(tabName){
   if(!tabData[tabName]) return; activeTab=tabName;
@@ -463,7 +463,7 @@ const pushTabs = debounce(()=>{
   saveTabsHTTP();
 }, 120);
 
-/******** Members: simple list ********/
+/******** Members: owner controls (role + remove) ********/
 let cachedMembers = [];
 async function fetchMembers(){
   const r=await fetch(apiUrl('members')+`?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`,{ headers:{ Authorization:`Bearer ${sessionJWT}` }});
@@ -478,6 +478,14 @@ async function computeRole(){
     if (row && row.owner_id === currentUserKey) return 'owner';
   }catch{}
   return 'viewer';
+}
+async function patchShare(id, role){
+  const r=await fetch(apiUrl(`shares/${id}`),{ method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${sessionJWT}` }, body: JSON.stringify({ role }) });
+  return r.ok;
+}
+async function deleteShare(id){
+  const r=await fetch(apiUrl(`shares/${id}`),{ method:'DELETE', headers:{ Authorization:`Bearer ${sessionJWT}` }});
+  return r.ok;
 }
 function openMembers(){
   if(!WORKSPACE_ID){ alert('Open a workspace to manage members.'); return;}
@@ -494,17 +502,43 @@ async function loadMembers(){
   // Owner-only invite row
   document.getElementById('inviteRow').classList.toggle('hidden', currentRole!=='owner');
 
-  // Render simple aligned rows: avatar + single line (name or email)
   list.innerHTML='';
   if(!cachedMembers.length){ list.innerHTML='<div class="py-6 text-sm text-gray-500">No members yet.</div>'; return; }
 
   cachedMembers.forEach(m=>{
-    const row=document.createElement('div'); row.className='flex items-center gap-3 py-3';
+    const row=document.createElement('div'); row.className='flex items-center justify-between py-3';
+    const left=document.createElement('div'); left.className='flex items-center gap-3 min-w-0';
     const bubble=document.createElement('div'); bubble.className='h-8 w-8 rounded-full bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xs font-semibold';
     bubble.textContent = initials(m.name||'', m.email||'');
     const meta=document.createElement('div'); meta.className='truncate';
     meta.textContent = (m.name && m.name.trim()) ? m.name : (m.email || '—');
-    row.appendChild(bubble); row.appendChild(meta);
+    left.appendChild(bubble); left.appendChild(meta);
+    row.appendChild(left);
+
+    const right=document.createElement('div'); right.className='flex items-center gap-2';
+    if(currentRole==='owner' && m.role!=='owner' && m.share_id){
+      const sel=document.createElement('select');
+      sel.className='text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800';
+      ['editor','viewer'].forEach(r=>{ const o=document.createElement('option'); o.value=r; o.text=r; if(String(m.role||'editor')===r) o.selected=true; sel.appendChild(o); });
+      sel.onchange=async ()=>{
+        const ok=await patchShare(m.share_id, sel.value);
+        if(!ok){ alert('Failed to update role'); sel.value = String(m.role||'editor'); }
+        else { m.role = sel.value; }
+      };
+
+      const del=document.createElement('button');
+      del.className='px-2 py-1 text-xs rounded bg-red-50 text-red-600 hover:bg-red-100';
+      del.textContent='Remove';
+      del.onclick=async ()=>{
+        if(!confirm(`Remove ${meta.textContent}?`)) return;
+        const ok=await deleteShare(m.share_id);
+        if(!ok) return alert('Failed to remove');
+        await loadMembers();
+      };
+
+      right.appendChild(sel); right.appendChild(del);
+    }
+    row.appendChild(right);
     list.appendChild(row);
   });
 }
