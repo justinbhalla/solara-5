@@ -157,26 +157,27 @@ let LAST_SYNCED_AT = null;
 let sessionJWT = null;
 let authedUser = null;
 let currentUserKey = null;
-let currentRole = 'viewer';
+let currentRole = 'viewer'; // role is fetched from server
 
 let tabData = {};
 let activeTab = null;
 
+const COLS = ['todo','inprogress','done'];
+let dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null };
+
+const presence = new Map(); // user_id -> {name,email,at}
 let liveSocket = null;
 let liveBeat = null;
-const presence = new Map(); // user_id -> {name,email,at}
-
-const COLS = ['todo','inprogress','done'];
-const debounce = (fn,ms=200)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
 
 /******** UTIL ********/
+const debounce = (fn,ms=180)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
 function getSessionJWT(){
   const m = document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : (localStorage.getItem('stytch_session_jwt') || localStorage.getItem('solara_session_jwt') || null);
 }
 function normalizeDateString(s){ if(!s) return ''; if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; const d=new Date(s); if(isNaN(d)) return ''; const tz=d.getTimezoneOffset()*60000; return new Date(d.getTime()-tz).toISOString().slice(0,10); }
 function initials(name='', email=''){ const parts=String(name).trim().split(/\s+/).filter(Boolean); return parts.length?parts.slice(0,2).map(s=>s[0].toUpperCase()).join(''):(email||'?').slice(0,2).toUpperCase(); }
-function displayNameFor(u){ const parts=[u?.name?.first_name,u?.name?.last_name].filter(Boolean); return parts.length?parts.join(' '):(u?.email_addresses?.[0]?.email_address||''); }
+function displayNameFor(u){ const p=[u?.name?.first_name,u?.name?.last_name].filter(Boolean); return p.length?p.join(' '):(u?.email_addresses?.[0]?.email_address||''); }
 function escapeHTML(s=''){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
 function formatStamp(ts){ if(!ts) return '—'; const d=new Date(ts); if(isNaN(d)) return '—'; return d.toLocaleString([], {year:'numeric',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
 function updateFooter(){ document.getElementById('footerWorkspaceName').textContent = `Workspace: ${WORKSPACE_NAME||'—'}`; document.getElementById('footerLastSynced').textContent = `Last synced: ${formatStamp(LAST_SYNCED_AT)}`; }
@@ -185,8 +186,7 @@ function updateFooter(){ document.getElementById('footerWorkspaceName').textCont
 function hydrateFromAuthCheckPayload(data){
   const full=(data?.name||'').trim(); const parts=full?full.split(/\s+/):[]; const first=parts[0]||''; const last=parts.slice(1).join(' ')||'';
   const email=data?.email||''; const uid=data?.user_id||email||'anon';
-  currentUserKey=uid;
-  return { name:{first_name:first,last_name:last}, email_addresses: email?[{email_address:email}]:[] };
+  currentUserKey=uid; return { name:{first_name:first,last_name:last}, email_addresses: email?[{email_address:email}]:[] };
 }
 function updateAuthUI(){
   const u=authedUser||{name:{},email_addresses:[]};
@@ -203,14 +203,13 @@ async function verifySessionAndHydrate(){
     const r=await fetch(apiUrl('auth/check'), { headers:{ Authorization:`Bearer ${sessionJWT}` }});
     if(!r.ok) return false;
     const data=await r.json();
-    const fresh = hydrateFromAuthCheckPayload(data);
+    const fresh=hydrateFromAuthCheckPayload(data);
     if(!authedUser){ authedUser=fresh; } else {
       if (fresh.email_addresses?.[0]?.email_address && !authedUser.email_addresses?.length) authedUser.email_addresses=fresh.email_addresses;
       if ((fresh.name?.first_name||fresh.name?.last_name) && !(authedUser.name?.first_name||authedUser.name?.last_name)) authedUser.name=fresh.name;
     }
     localStorage.setItem('stytch_user', JSON.stringify(authedUser));
-    updateAuthUI();
-    return true;
+    updateAuthUI(); return true;
   }catch{ return !!authedUser; }
 }
 function requireReauth(){ try{ localStorage.removeItem('stytch_session_jwt'); localStorage.removeItem('solara_session_jwt'); }catch{} location.replace('/sign-in.html'); }
@@ -219,7 +218,7 @@ document.addEventListener('click',(e)=>{ const m=document.getElementById('userMe
 document.getElementById('signOutBtn').onclick=()=>requireReauth();
 document.getElementById('addUserBtn').onclick=()=>openMembers();
 
-/******** Presence (header) ********/
+/******** Presence (simple header) ********/
 document.getElementById('presenceBtn').onclick=()=> document.getElementById('presenceTooltip').classList.toggle('hidden');
 function presenceRender(){
   const others = Array.from(presence.values()).filter(p => p.id !== currentUserKey && Date.now() - (p.at||0) < 30000);
@@ -238,15 +237,8 @@ function presenceRender(){
   });
   count.textContent = others.length ? '' : '0 online';
 }
-function presenceJoin(){ liveSend({ type:'presence/join' }); touchSelfPresence(); }
-function presenceBeat(){ liveSend({ type:'presence/beat' }); touchSelfPresence(); }
-function presenceLeave(){ try{ liveSend({ type:'presence/leave' }); }catch{} }
-function touchSelfPresence(){
-  const email=authedUser?.email_addresses?.[0]?.email_address||''; const name=displayNameFor(authedUser)||email||'You';
-  presence.set(currentUserKey, { id: currentUserKey, name, email, at: Date.now() }); presenceRender();
-}
 
-/******** LIVE (WS) ********/
+/******** LIVE (optional; safe if /live not present) ********/
 function liveUrl(){
   try{
     const base=new URL(API_BASE); base.pathname=(base.pathname.replace(/\/+$/,'') + '/live').replace(/\/{2,}/g,'/');
@@ -258,7 +250,7 @@ function liveConnect(){
   const u=liveUrl(); if(!u) return; let ws;
   try{ ws=new WebSocket(u); }catch{ return; }
   liveSocket=ws;
-  ws.onopen=()=>{ presenceJoin(); if(liveBeat) clearInterval(liveBeat); liveBeat=setInterval(presenceBeat,20000); };
+  ws.onopen=()=>{ if(liveBeat) clearInterval(liveBeat); liveBeat=setInterval(()=>{ try{ ws.send(JSON.stringify({type:'presence/beat'})); }catch{} },20000); };
   ws.onmessage=(ev)=>{
     let msg={}; try{ msg=JSON.parse(ev.data||'{}'); }catch{}
     if(!msg||typeof msg!=='object') return;
@@ -274,7 +266,6 @@ function liveConnect(){
     }
     if (msg.type==='presence/leave'){ presence.delete(msg.by); presenceRender(); return; }
     if (msg.type==='tabs'){
-      if (msg.by===currentUserKey){ LAST_SYNCED_AT=msg.ts; updateFooter(); return; }
       tabData=migrateTaskShapes(msg.tabs||{}); renderTabs(); if(!activeTab) activeTab=Object.keys(tabData)[0]||null; switchTab(activeTab); LAST_SYNCED_AT=msg.ts; updateFooter(); return;
     }
   };
@@ -282,7 +273,7 @@ function liveConnect(){
 }
 function liveSend(obj){ if(!liveSocket||liveSocket.readyState!==1) return; try{ liveSocket.send(JSON.stringify(obj)); }catch{} }
 
-/******** HTTP Sync (fallback) ********/
+/******** HTTP Sync ********/
 async function fetchCloudTabs(){
   try{
     const r=await fetch(apiUrl('tasks')+`?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`,{ headers:{ Authorization:`Bearer ${sessionJWT}` }});
@@ -355,13 +346,14 @@ function renderBoard(){
     const el=document.getElementById(col);
     el.querySelectorAll('[data-task]')?.forEach(n=>n.remove());
     el.ondragover=(e)=>{
+      if(currentRole==='viewer') return;
       e.preventDefault(); el.classList.add('drag-over','show-drop');
       const after=getDragAfterElement(el,e.clientY); const indicator=el.querySelector('.drop-indicator');
       if(after==null){ el.appendChild(indicator);} else { el.insertBefore(indicator, after); }
       dragContext.overCol=el.dataset.col; dragContext.insertIndex=computeInsertIndex(el, indicator);
     };
     el.ondragleave=()=>el.classList.remove('drag-over','show-drop');
-    el.ondrop=(e)=>{ e.preventDefault(); el.classList.remove('drag-over','show-drop'); const id=dragContext.id; if(!id) return; commitReorder(id, dragContext.fromCol, el.dataset.col, dragContext.insertIndex); clearDragContext(); };
+    el.ondrop=(e)=>{ if(currentRole==='viewer') return; e.preventDefault(); el.classList.remove('drag-over','show-drop'); const id=dragContext.id; if(!id) return; commitReorder(id, dragContext.fromCol, el.dataset.col, dragContext.insertIndex); clearDragContext(); };
   });
   if(!activeTab || !tabData[activeTab]) return;
   ensureAtLeastOneTask();
@@ -397,7 +389,6 @@ function createTaskElement(id, content='', dueDate='', priority='Medium', column
   togglePH();
   return w;
 }
-let dragContext={ id:null, fromCol:null, overCol:null, insertIndex:null };
 function clearDragContext(){ dragContext={ id:null, fromCol:null, overCol:null, insertIndex:null }; }
 function getDragAfterElement(container, y){
   const els=[...container.querySelectorAll('[data-task]:not(.dragging)')];
@@ -453,7 +444,6 @@ const pushTabs = debounce(()=>{
 }, 120);
 
 /******** Members (uses /shares) ********/
-let cachedMembers = [];
 async function listShares(){
   const url = apiUrl('shares') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
   const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
@@ -465,52 +455,41 @@ async function loadMembers(){
   const list=document.getElementById('membersList');
   list.innerHTML='<div class="py-6 text-sm text-gray-500">Loading…</div>';
 
-  // Determine role/owner
-  let ownerId=null;
+  // Get workspace + role
   try{
-    const wsRes=await fetch(apiUrl('workspaces'),{ headers:{ Authorization:`Bearer ${sessionJWT}` }});
-    if(wsRes.ok){ const d=await wsRes.json(); const row=(d.workspaces||[]).find(w=>w.id===WORKSPACE_ID); if(row){ ownerId=row.owner_id; WORKSPACE_NAME=row.name||WORKSPACE_NAME; updateFooter(); if(row.owner_id===currentUserKey) currentRole='owner'; else currentRole='viewer'; } }
+    const roleRes = await fetch(apiUrl(`workspaces/${encodeURIComponent(WORKSPACE_ID)}/role`), { headers:{ Authorization:`Bearer ${sessionJWT}` }});
+    if(roleRes.ok){ const d=await roleRes.json(); currentRole=d.role||'viewer'; }
   }catch{}
-
-  const shares = await listShares();
-
-  // Build simple rows from shares; owner row (without email if not known)
-  const rows = [];
-  rows.push({ name:'Owner', email:'', role:'owner', share_id:null, isOwner:true });
-  shares.forEach(s=> rows.push({ name:'', email:(s.email||''), role:(s.role||'editor'), share_id:s.id, isOwner:false }));
-
-  // Owner-only invite row
   document.getElementById('inviteRow').classList.toggle('hidden', currentRole!=='owner');
 
+  const shares = await listShares();
   list.innerHTML='';
-  if(!rows.length){ list.innerHTML='<div class="py-6 text-sm text-gray-500">No members yet.</div>'; return; }
+  if(!shares.length){ list.innerHTML='<div class="py-6 text-sm text-gray-500">No members yet. Invite someone above.</div>'; return; }
 
-  rows.forEach(m=>{
+  shares.forEach(s=>{
     const row=document.createElement('div'); row.className='flex items-center justify-between py-3';
     const left=document.createElement('div'); left.className='flex items-center gap-3 min-w-0';
     const bubble=document.createElement('div'); bubble.className='h-8 w-8 rounded-full bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xs font-semibold';
-    bubble.textContent = initials(m.name||'', m.email||'');
-    const meta=document.createElement('div'); meta.className='truncate';
-    meta.textContent = (m.name && m.name.trim()) ? m.name : (m.email || '—');
+    bubble.textContent = initials('', (s.email||''));
+    const meta=document.createElement('div'); meta.className='truncate'; meta.textContent = s.email || '—';
     left.appendChild(bubble); left.appendChild(meta);
     row.appendChild(left);
 
     const right=document.createElement('div'); right.className='flex items-center gap-2';
-    if(currentRole==='owner' && !m.isOwner && m.share_id){
+    if(currentRole==='owner'){
       const sel=document.createElement('select');
       sel.className='text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800';
-      ['editor','viewer'].forEach(r=>{ const o=document.createElement('option'); o.value=r; o.text=r; if(String(m.role||'editor')===r) o.selected=true; sel.appendChild(o); });
+      ['editor','viewer'].forEach(r=>{ const o=document.createElement('option'); o.value=r; o.text=r; if(String(s.role||'editor')===r) o.selected=true; sel.appendChild(o); });
       sel.onchange=async ()=>{
-        const ok=await fetch(apiUrl(`shares/${m.share_id}`),{ method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${sessionJWT}` }, body: JSON.stringify({ role: sel.value }) }).then(r=>r.ok);
-        if(!ok){ alert('Failed to update role'); sel.value = String(m.role||'editor'); }
-        else { m.role = sel.value; }
+        const ok=await fetch(apiUrl(`shares/${s.id}`),{ method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${sessionJWT}` }, body: JSON.stringify({ role: sel.value }) }).then(r=>r.ok);
+        if(!ok){ alert('Failed to update role'); sel.value = String(s.role||'editor'); } else { s.role = sel.value; }
       };
       const del=document.createElement('button');
       del.className='px-2 py-1 text-xs rounded bg-red-50 text-red-600 hover:bg-red-100';
       del.textContent='Remove';
       del.onclick=async ()=>{
-        if(!confirm(`Remove ${meta.textContent}?`)) return;
-        const ok=await fetch(apiUrl(`shares/${m.share_id}`),{ method:'DELETE', headers:{ Authorization:`Bearer ${sessionJWT}` }}).then(r=>r.ok);
+        if(!confirm(`Remove ${s.email||'this member'}?`)) return;
+        const ok=await fetch(apiUrl(`shares/${s.id}`),{ method:'DELETE', headers:{ Authorization:`Bearer ${sessionJWT}` }}).then(r=>r.ok);
         if(!ok) return alert('Failed to remove');
         await loadMembers();
       };
@@ -533,9 +512,7 @@ async function inviteMember(){
   const r=await fetch(apiUrl('shares'),{ method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${sessionJWT}` }, body: JSON.stringify({ email, workspace_id: WORKSPACE_ID }) });
   const b=await r.json().catch(()=>({}));
   if(!r.ok) return alert('Invite failed: '+(b?.error||r.status));
-  input.value='';
-  await loadMembers();
-  if (b.invite_link) { try{ await navigator.clipboard.writeText(b.invite_link);}catch{} alert('Invitation created. Link copied.'); }
+  input.value=''; await loadMembers(); alert('Invitation sent.');
 }
 
 /******** Export ********/
@@ -545,18 +522,17 @@ function exportBoardAsPDF(){
 }
 
 /******** Boot ********/
-function maybeAttachLastWorkspace(){
-  const url=new URL(location.href);
-  if(url.searchParams.get('ws')) return;
-  const last=localStorage.getItem('solara_last_ws'); if(last){ url.searchParams.set('ws', last); history.replaceState(null,'',url.toString()); }
-}
 function setReportsHref(){
   const btn=document.getElementById('reportsLink'); if(btn){ btn.onclick=()=>{ if(!WORKSPACE_ID){ alert('Open a workspace first.'); return; } location.href=`reports.html?ws=${encodeURIComponent(WORKSPACE_ID)}`; }; }
   const logo=document.getElementById('workspacesLink'); if(logo) logo.href='workspace.html';
 }
-
+async function fetchRole(){
+  try{
+    const r=await fetch(apiUrl(`workspaces/${encodeURIComponent(WORKSPACE_ID)}/role`), { headers:{ Authorization:`Bearer ${sessionJWT}` }});
+    if(r.ok){ const d=await r.json(); currentRole=d.role||'viewer'; }
+  }catch{}
+}
 async function initialLoad(){
-  maybeAttachLastWorkspace();
   const url=new URL(location.href);
   WORKSPACE_ID = url.searchParams.get('ws')||'';
   if(!WORKSPACE_ID){ document.getElementById('wsBanner').classList.remove('hidden'); }
@@ -564,32 +540,31 @@ async function initialLoad(){
   const ok=await verifySessionAndHydrate(); if(!ok) return requireReauth();
   setReportsHref();
 
-  // Workspace name
+  // Workspace name + role (role first to enable editing)
   try{
     const wsRes=await fetch(apiUrl('workspaces'),{ headers:{ Authorization:`Bearer ${sessionJWT}` }});
     if(wsRes.ok){ const data=await wsRes.json(); const row=(data.workspaces||[]).find(w=>w.id===WORKSPACE_ID); if(row){ WORKSPACE_NAME=row.name||'—'; } }
   }catch{}
+  await fetchRole();
   updateFooter();
 
-  // Initial tabs
-  const REMOTE = await fetchCloudTabs();
-  tabData = migrateTaskShapes(REMOTE||{});
+  // Initial data
+  const remote = await fetchCloudTabs();
+  tabData = migrateTaskShapes(remote||{});
   if(Object.keys(tabData).length===0){ const def='Click to edit'; tabData[def]={ todo:[], inprogress:[], done:[] }; }
   activeTab = Object.keys(tabData)[0];
   renderTabs(); switchTab(activeTab);
 
-  // Live (non-blocking if server lacks /live)
+  // Live connect (optional)
   liveConnect();
 
-  // Fallback poll to keep things fresh
+  // Fallback refresher
   setInterval(async ()=>{
     if (!liveSocket || liveSocket.readyState!==1){
       const snap=await fetchCloudTabs(); if(snap){ tabData=migrateTaskShapes(snap); renderTabs(); if(!activeTab) activeTab=Object.keys(tabData)[0]||null; switchTab(activeTab); }
     }
   }, 20000);
 }
-
-window.addEventListener('beforeunload', presenceLeave);
 document.addEventListener('DOMContentLoaded', initialLoad);
 </script>
 </body>
