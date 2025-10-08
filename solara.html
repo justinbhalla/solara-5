@@ -22,7 +22,7 @@
 </head>
 <body class="flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
 
-  <!-- Workspace hint banner -->
+  <!-- Workspace hint -->
   <div id="wsBanner" class="hidden bg-amber-50 text-amber-900 border-b border-amber-200 px-6 py-2 text-sm">
     No workspace selected. <a class="underline font-medium" href="workspace.html">Go to Workspaces</a>
   </div>
@@ -38,11 +38,16 @@
     </div>
 
     <div class="flex items-center gap-4">
-      <!-- Presence avatars (others only) -->
+      <!-- Presence avatars (others only; no count if someone is online) -->
       <div class="flex items-center gap-2">
         <div id="presenceAvatars" class="flex -space-x-2"></div>
         <span id="presenceCount" class="text-xs text-gray-500"></span>
       </div>
+
+      <!-- Manage members -->
+      <button id="manageBtn" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition" title="Manage members">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.57-.906 3.435.96 2.53 2.53a1.724 1.724 0 001.065 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.906 1.57-.96 3.435-2.53 2.53a1.724 1.724 0 00-2.573 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.57.906-3.435-.96-2.53-2.53A1.724 1.724 0 003.087 13.9c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.906-1.57.96-3.435 2.53-2.53.98.565 2.229.11 2.642-1.13zM12 9a3 3 0 110 6 3 3 0 010-6z"/></svg>
+      </button>
 
       <!-- Signed-in user -->
       <div id="userArea" class="relative">
@@ -101,7 +106,7 @@
     </div>
   </main>
 
-  <!-- Footer (L/C/R aligned) -->
+  <!-- Footer (workspace left, copyright center, last synced right) -->
   <div class="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 z-50">
     <div class="px-6 py-3">
       <div class="grid grid-cols-3 items-center text-xs text-gray-500 dark:text-gray-400">
@@ -112,7 +117,7 @@
     </div>
   </div>
 
-  <!-- Members Modal (simple list; owner controls on right) -->
+  <!-- Members Modal -->
   <div id="membersModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center">
     <div class="absolute inset-0 bg-black/40" onclick="closeMembers()"></div>
     <div class="relative w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 shadow-xl">
@@ -137,8 +142,8 @@
 const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev";
 const apiUrl = (p) => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
 
-const POLL_MS = 3000;  // presence/tab polling
-const BEAT_MS = 20000; // presence heartbeat
+const POLL_MS = 3000;   // presence + tabs poll
+const BEAT_MS = 20000;  // presence heartbeat
 
 /**************
  *  STATE
@@ -151,13 +156,14 @@ let BASE = {};
 let sessionJWT = null;
 let authedUser = null;
 let currentUserKey = null;
+let AUTH_USER_ID = null;
 let dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null };
 let STORAGE_NS = null;
 let currentRole = 'owner';
 let lastSyncedISO = null;
 
-/* Presence */
-const presence = new Map(); // other userId -> {name,email}
+/* Presence: map of other users (not me) */
+const presence = new Map(); // id -> {name,email}
 
 /*******************
  *  UTILITIES
@@ -252,7 +258,6 @@ function mergeTabs(BASE0, LOCAL0, REMOTE0){
     if(lt && !rt){ place(lt,l.tab,l.col,lt.pos); return; }
     if(rt && !lt){ place(rt,r.tab,r.col,rt.pos); return; }
     const newer=(a,b)=> (a?.upd||0)>=(b?.upd||0)?a:b;
-    const winner=newer(lt,rt);
     let tab=l.tab, col=l.col, pos=lt.pos;
     if(l.tab!==r.tab || l.col!==r.col){
       if((lt.upd||0)===(rt.upd||0)) { tab=l.tab; col=l.col; pos=lt.pos; }
@@ -279,7 +284,7 @@ function loadTabsFromStorage(){ try{ const raw=localStorage.getItem(storageKey()
 function saveTabsToStorage(){ try{ localStorage.setItem(storageKey(), JSON.stringify(tabData)); }catch{} }
 
 /*******************
- *  CLOUD (includes LAST SYNCED updates)
+ *  CLOUD (updated_at support)
  *******************/
 async function fetchCloudTabs(){
   if(!sessionJWT || !WORKSPACE_ID) return null;
@@ -334,6 +339,7 @@ function hydrateFromAuthCheckPayload(data){
   const email = data?.email || '';
   const uid   = data?.user_id || email || 'anon';
   currentUserKey = uid;
+  AUTH_USER_ID = uid;
   computeStorageNS();
   return { name:{ first_name:first, last_name:last }, email_addresses: email ? [{ email_address: email }] : [] };
 }
@@ -388,28 +394,25 @@ async function verifySessionAndHydrate(){
  *******************/
 function openMembers(){ document.getElementById('membersModal').classList.remove('hidden'); loadMembers(); }
 function closeMembers(){ document.getElementById('membersModal').classList.add('hidden'); }
-document.addEventListener('DOMContentLoaded', ()=>{
-  const btn = document.getElementById('manageBtn');
-  if(btn){ btn.addEventListener('click', ()=>{ if(!WORKSPACE_ID) return alert('Open a workspace to manage members.'); openMembers(); }); }
-});
+document.getElementById('manageBtn').addEventListener('click', ()=>{ if(!WORKSPACE_ID) return alert('Open a workspace to manage members.'); openMembers(); });
+
 async function listShares(){
   if(!sessionJWT) return [];
   const url = apiUrl('shares') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
   const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
   if(!res.ok) return [];
   const data = await res.json();
-  // my role
+  // my role: owner vs share
   currentRole = 'owner';
-  const myself = (authedUser?.email_addresses?.[0]?.email_address||'').toLowerCase();
-  const wres   = await fetch(apiUrl('workspaces'), { headers:{ 'Authorization':`Bearer ${sessionJWT}` } }).then(r=>r.ok?r.json():{workspaces:[]}).catch(()=>({workspaces:[]}));
-  const wsRow  = (wres.workspaces||[]).find(w=>w.id===WORKSPACE_ID);
-  if (wsRow && wsRow.owner_id){
-    const authId = JSON.parse(localStorage.getItem('stytch_auth')||'{}').user_id || '__';
-    if (wsRow.owner_id !== authId) {
-      const share = (data.shares||[]).find(s=> (s.email||'').toLowerCase()===myself && s.accepted_by_user_id);
+  try{
+    const wres = await fetch(apiUrl('workspaces'), { headers:{ 'Authorization':`Bearer ${sessionJWT}` } }).then(r=>r.ok?r.json():{workspaces:[]});
+    const wsRow = (wres.workspaces||[]).find(w=>w.id===WORKSPACE_ID);
+    if (wsRow && wsRow.owner_id && AUTH_USER_ID && wsRow.owner_id !== AUTH_USER_ID) {
+      const me = (authedUser?.email_addresses?.[0]?.email_address||'').toLowerCase();
+      const share = (data.shares||[]).find(s=> (s.email||'').toLowerCase()===me && s.accepted_by_user_id);
       if(share) currentRole = (share.role||'editor');
     }
-  }
+  }catch{}
   return data.shares || [];
 }
 async function postShare(email){
@@ -626,7 +629,7 @@ function addNewTask(){
 }
 
 /*******************
- *  PRESENCE (HTTP poll + heartbeats)
+ *  PRESENCE (HTTP poll)
  *******************/
 function renderPresence(){
   const avatars = document.getElementById('presenceAvatars');
@@ -634,7 +637,7 @@ function renderPresence(){
   avatars.innerHTML = '';
   const list = [...presence.values()];
   if (list.length === 0) { count.textContent = '0 online'; return; }
-  count.textContent = '';
+  count.textContent = ''; // remove count when someone is online
   const max=4;
   list.slice(0,max).forEach(p=>{
     const span=document.createElement('span');
@@ -661,7 +664,7 @@ async function presencePoll(){
   try{
     const r = await fetch(apiUrl(`presence?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`), { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
     if(!r.ok) return;
-    const j = await r.json(); const me = currentUserKey;
+    const j = await r.json(); const me = AUTH_USER_ID;
     presence.clear();
     (j.online||[]).filter(u=>u.id!==me).forEach(p=> presence.set(p.id,{ name:p.name, email:p.email }));
     renderPresence();
@@ -704,7 +707,7 @@ async function initialLoad(){
 
   setReportsHref();
 
-  // Name in footer (from /workspaces list)
+  // Name in footer
   try{
     const ws = await fetch(apiUrl('workspaces'), { headers:{ 'Authorization':`Bearer ${sessionJWT}` } }).then(r=>r.ok?r.json():{workspaces:[]});
     WORKSPACE_NAME = (ws.workspaces||[]).find(w=>w.id===WORKSPACE_ID)?.name || '';
@@ -715,23 +718,23 @@ async function initialLoad(){
   tabData = loadTabsFromStorage();
   if(Object.keys(tabData).length===0){
     const def='Click to edit';
-    tabData[def]={ todo:[], inprogress:[], done:[] }; // <-- fixed line
+    tabData[def]={ todo:[], inprogress:[], done:[] };
   }
   if(!activeTab) activeTab = Object.keys(tabData)[0];
   renderTabs(); switchTab(activeTab);
 
-  // Cloud bootstrap (also stamps "Last synced" via server updated_at)
+  // Cloud bootstrap + updated_at
   const REM = await fetchCloudTabs();
   if(REM){ BASE=clone(REM); tabData=mergeTabs({}, tabData, REM); saveTabsToStorage(); renderTabs(); switchTab(activeTab); }
 
-  // Start presence & sync timers
+  // Presence now
   renderPresence();
   await presenceBeat();
-  await presencePoll();              // immediate first poll so avatars appear right away
+  await presencePoll();
   setInterval(presenceBeat, BEAT_MS);
   setInterval(presencePoll, POLL_MS);
 
-  // keep tabs fresh
+  // Keep tabs fresh
   setInterval(async()=>{
     const remote=await fetchCloudTabs();
     if(remote){
