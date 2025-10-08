@@ -1,490 +1,738 @@
 <!DOCTYPE html>
 <html lang="en" class="h-full">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Solara – Adaptive Workspace</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
-    .drag-over{ background:rgba(99,102,241,.08); outline:2px dashed #6366f1; outline-offset:-2px }
-    .menu-card{ box-shadow:0 10px 20px rgba(0,0,0,.08) }
-    .editable{ outline:none; min-height:1.5rem }
-    .dragging{ opacity:.6; transform:rotate(.4deg) }
-    .drop-indicator{ height:.5rem; border-radius:.25rem; background:rgba(99,102,241,.45); margin:.25rem 0; display:none }
-    .show-drop .drop-indicator{ display:block }
-    .date-badge{ font-variant-numeric: tabular-nums }
-    .presence-dot{ position:absolute; right:-2px; bottom:-2px; width:10px; height:10px; border-radius:999px; background:#10b981; border:2px solid white }
-    .avatar{ position:relative }
-    footer .slot{ min-width:0 }
+    .fade-in { animation: fadeIn .25s ease-in-out; }
+    @keyframes fadeIn { from { opacity:.0; } to { opacity:1; } }
+    .drag-over { background-color: rgba(99,102,241,.08); outline: 2px dashed #6366f1; outline-offset: -2px; }
+    .menu-card { box-shadow: 0 10px 20px rgba(0,0,0,.08); }
+    .editable { outline: none; min-height: 1.5rem; }
+    .dragging { opacity: .6; transform: rotate(.5deg); }
+    .drop-indicator { height: .5rem; border-radius: .25rem; background: rgba(99,102,241,.45); margin: .25rem 0; display: none; }
+    .show-drop .drop-indicator { display: block; }
+    .date-badge { font-variant-numeric: tabular-nums; }
+    .presence-dot { position:absolute; right:-2px; bottom:-2px; width:10px; height:10px; border-radius:999px; background:#10b981; border:2px solid white; }
+    .avatar { position:relative; }
   </style>
 </head>
-<body class="flex flex-col min-h-screen bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100">
-<div id="wsBanner" class="hidden bg-amber-50 text-amber-900 border-b border-amber-200 px-6 py-2 text-sm">
-  No workspace selected. <a class="underline font-medium" href="workspace.html">Go to Workspaces</a>
-</div>
+<body class="flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
 
-<header class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-  <div class="flex items-center gap-3">
-    <a id="workspacesLink" href="workspace.html" class="w-9 h-9 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center hover:bg-indigo-600/20">🔷</a>
-    <div>
-      <h1 class="text-3xl font-bold tracking-tight">Solara</h1>
-      <p class="text-sm text-gray-500 dark:text-gray-400">Part of the ZLG Product Suite</p>
-    </div>
+  <!-- Workspace hint banner -->
+  <div id="wsBanner" class="hidden bg-amber-50 text-amber-900 border-b border-amber-200 px-6 py-2 text-sm">
+    No workspace selected. <a class="underline font-medium" href="workspace.html">Go to Workspaces</a>
   </div>
 
-  <div class="flex items-center gap-4">
-    <div class="relative">
-      <button id="presenceBtn" class="flex -space-x-2 items-center">
-        <span id="presenceAvatars" class="flex -space-x-2"></span>
-        <span id="presenceCount" class="ml-2 text-xs text-gray-500"></span>
-      </button>
-      <div id="presenceTooltip" class="hidden absolute right-0 mt-2 w-64 rounded-xl menu-card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 p-3 text-sm shadow">
-        <div class="font-semibold mb-2">Online now</div>
-        <div id="presenceList" class="space-y-1 max-h-56 overflow-auto"></div>
+  <!-- Header -->
+  <header class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+    <div class="flex items-center gap-3">
+      <a id="workspacesLink" href="workspace.html" class="w-9 h-9 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center hover:bg-indigo-600/20" title="Back to Workspaces">🔷</a>
+      <div>
+        <h1 class="text-3xl font-bold tracking-tight">Solara</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Part of the ZLG Product Suite</p>
       </div>
     </div>
 
-    <div id="userArea" class="relative">
-      <button id="userButton" class="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-        <span id="avatar" class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-semibold">?</span>
-        <span id="userName" class="text-sm font-medium">User</span>
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd"/></svg>
+    <div class="flex items-center gap-4">
+      <!-- Presence avatars (others only) -->
+      <div class="flex items-center gap-2">
+        <div id="presenceAvatars" class="flex -space-x-2"></div>
+        <span id="presenceCount" class="text-xs text-gray-500"></span>
+      </div>
+
+      <!-- Signed-in user -->
+      <div id="userArea" class="relative">
+        <button id="userButton" class="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+          <span id="avatar" class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-semibold">?</span>
+          <span id="userName" class="text-sm font-medium">User</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd"/></svg>
+        </button>
+        <div id="userMenu" class="hidden absolute right-0 mt-2 w-56 rounded-xl menu-card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
+          <div class="px-4 py-3 text-sm">
+            <div id="userEmail" class="text-gray-600 dark:text-gray-300"></div>
+          </div>
+          <div class="border-t border-gray-100 dark:border-gray-700"></div>
+          <button id="addUserBtn" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Add user…</button>
+          <button id="signOutBtn" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">Sign out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Nav -->
+  <nav class="flex items-center justify-between px-6 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-medium">
+    <div class="flex items-center gap-6">
+      <button class="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-semibold">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3h14v2H3V3zm0 4h9v2H3V7zm0 4h14v2H3v-2zm0 4h9v2H3v-2z"/></svg>
+        <span>Tasks</span>
       </button>
-      <div id="userMenu" class="hidden absolute right-0 mt-2 w-56 rounded-xl menu-card bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
-        <div class="px-4 py-3 text-sm"><div id="userEmail" class="text-gray-600 dark:text-gray-300"></div></div>
-        <div class="border-t border-gray-100 dark:border-gray-700"></div>
-        <button id="addUserBtn" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Add user…</button>
-        <button id="signOutBtn" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">Sign out</button>
+      <button id="reportsLink" class="flex items-center gap-2 text-gray-700 dark:text-gray-200 hover:text-indigo-600">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 16v-4m4 4V8m4 8V5"/></svg>
+        <span>Reports</span>
+      </button>
+    </div>
+    <div class="flex items-center gap-3">
+      <button onclick="clearAllTasks()" title="Clear all tasks in current tab" class="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-all">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m0 0A2.99 2.99 0 017 6h10a2.99 2.99 0 012.418 3H19v10a2 2 0 01-2 2H7a2 2 0 01-2-2V9h.582zM10 11v6m4-6v6"/></svg>
+      </button>
+      <button id="newTaskBtn" onclick="addNewTask()" class="px-4 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500 shadow transition">+</button>
+    </div>
+  </nav>
+
+  <!-- Main Board -->
+  <main class="p-6 flex-1 overflow-y-auto">
+    <div id="board" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div id="todo" class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg shadow-sm" data-col="todo">
+        <h2 class="text-lg font-semibold mb-2">To Do</h2>
+        <div class="drop-indicator"></div>
+      </div>
+      <div id="inprogress" class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg shadow-sm" data-col="inprogress">
+        <h2 class="text-lg font-semibold mb-2">In Progress</h2>
+        <div class="drop-indicator"></div>
+      </div>
+      <div id="done" class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg shadow-sm" data-col="done">
+        <h2 class="text-lg font-semibold mb-2">Done</h2>
+        <div class="drop-indicator"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer (L/C/R aligned) -->
+  <div class="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 z-50">
+    <div class="px-6 py-3">
+      <div class="grid grid-cols-3 items-center text-xs text-gray-500 dark:text-gray-400">
+        <div id="footerWsName" class="justify-self-start truncate"></div>
+        <div class="justify-self-center">© 2025 ZenLock Group (ZLG). All rights reserved.</div>
+        <div class="justify-self-end"><span id="lastSynced">Last synced — …</span></div>
       </div>
     </div>
   </div>
-</header>
 
-<nav class="flex items-center justify-between px-6 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-medium">
-  <div class="flex items-center gap-6">
-    <button class="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-semibold">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3h14v2H3V3zm0 4h9v2H3V7zm0 4h14v2H3v-2zm0 4h9v2H3v-2z"/></svg>
-      <span>Tasks</span>
-    </button>
-    <button id="reportsLink" class="flex items-center gap-2 text-gray-700 dark:text-gray-200 hover:text-indigo-600">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 16v-4m4 4V8m4 8V5"/></svg>
-      <span>Reports</span>
-    </button>
-  </div>
-  <div class="flex items-center gap-3">
-    <button id="clearBtn" title="Clear all tasks in current tab" class="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-all">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m0 0A2.99 2.99 0 017 6h10a2.99 2.99 0 012.418 3H19v10a2 2 0 01-2 2H7a2 2 0 01-2-2V9h.582zM10 11v6m4-6v6"/></svg>
-    </button>
-    <button id="newTaskBtn" class="px-4 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-500 shadow transition">+</button>
-  </div>
-</nav>
-
-<main class="p-6 flex-1 overflow-y-auto">
-  <div id="board" class="grid grid-cols-1 md:grid-cols-3 gap-6">
-    <div id="todo" class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg shadow-sm" data-col="todo"><h2 class="text-lg font-semibold mb-2">To Do</h2><div class="drop-indicator"></div></div>
-    <div id="inprogress" class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg shadow-sm" data-col="inprogress"><h2 class="text-lg font-semibold mb-2">In Progress</h2><div class="drop-indicator"></div></div>
-    <div id="done" class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg shadow-sm" data-col="done"><h2 class="text-lg font-semibold mb-2">Done</h2><div class="drop-indicator"></div></div>
-  </div>
-</main>
-
-<div class="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 z-50">
-  <div class="flex items-center justify-between px-6 py-3 overflow-x-auto">
-    <div class="flex items-center gap-2 w-full overflow-x-auto px-1 py-1">
-      <div id="tabs" class="flex gap-2 min-w-max"></div>
-      <button id="addTabBtn" title="Add Tab" class="p-2 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition duration-150 shadow-sm border border-green-200">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-      </button>
-    </div>
-    <div class="flex items-center gap-1">
-      <button id="manageBtn" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition" title="Manage members">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.57-.906 3.435.96 2.53 2.53a1.724 1.724 0 001.065 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.906 1.57-.96 3.435-2.53 2.53a1.724 1.724 0 00-2.573 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.57.906-3.435-.96-2.53-2.53A1.724 1.724 0 003.087 13.9c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.906-1.57.96-3.435 2.53-2.53.98.565 2.229.11 2.642-1.13zM12 9a3 3 0 110 6 3 3 0 010-6z"/></svg>
-      </button>
-      <button id="exportBtn" class="ml-1 p-2 rounded-full hover:bg-indigo-100 text-indigo-600 transition" title="Download Board">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zm-7 4h14v-2H5v2z"/></svg>
-      </button>
+  <!-- Members Modal (simple list; owner controls on right) -->
+  <div id="membersModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center">
+    <div class="absolute inset-0 bg-black/40" onclick="closeMembers()"></div>
+    <div class="relative w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 shadow-xl">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-lg font-semibold">Workspace Members</h3>
+        <button class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800" onclick="closeMembers()" title="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="flex gap-2 mb-3">
+        <input id="inviteEmail" type="email" placeholder="name@example.com" class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm" />
+        <button onclick="inviteMember()" class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 text-sm">Invite</button>
+      </div>
+      <div id="membersList" class="divide-y divide-gray-200 dark:divide-gray-700"></div>
     </div>
   </div>
-  <footer class="grid grid-cols-3 items-center text-center text-xs text-gray-500 dark:text-gray-400 px-6 py-3 border-t border-gray-200 dark:border-gray-700">
-    <div class="slot text-left truncate">Workspace: <span id="wsName">—</span></div>
-    <div class="slot">© 2025 ZenLock Group (ZLG). All rights reserved.</div>
-    <div class="slot text-right truncate"><span id="lastSynced">Last synced: —</span></div>
-  </footer>
-</div>
-
-<!-- Members Modal -->
-<div id="membersModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center">
-  <div class="absolute inset-0 bg-black/40" onclick="closeMembers()"></div>
-  <div class="relative w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 shadow-xl">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="text-lg font-semibold">Workspace Members</h3>
-      <button class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800" onclick="closeMembers()" title="Close">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-      </button>
-    </div>
-    <div class="flex gap-2 mb-3">
-      <input id="inviteEmail" type="email" placeholder="name@example.com" class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm"/>
-      <button id="inviteBtn" class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 text-sm">Invite</button>
-    </div>
-    <div id="membersList" class="divide-y divide-gray-200 dark:divide-gray-700"></div>
-  </div>
-</div>
 
 <script>
+/*************************
+ *  CONFIG
+ *************************/
 const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev";
-const apiUrl = p => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
+const apiUrl = (p) => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
 
-let WORKSPACE_ID = ''; let WORKSPACE_NAME = '';
-let sessionJWT = null; let authedUser = null; let currentUserKey = null; let currentRole = 'viewer';
-const COLS=['todo','inprogress','done']; let activeTab=null; let tabData={};
-let ws=null, wsRetry=0, heartbeatTimer=null, presencePollTimer=null, lastSyncedAt=null;
-const presence = new Map(); // others only
+const POLL_MS = 3000;  // presence/tab polling
+const BEAT_MS = 20000; // presence heartbeat
 
-/* utils */
-const debounce=(fn,ms=400)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
-function getSessionJWT(){ const m=document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/); return m?decodeURIComponent(m[1]):(localStorage.getItem('stytch_session_jwt')||localStorage.getItem('solara_session_jwt')||null); }
-function initials(name,email){ const parts=(name||'').trim().split(/\s+/).filter(Boolean); return parts.length?parts.slice(0,2).map(s=>s[0]).join('').toUpperCase():(email||'?').slice(0,2).toUpperCase(); }
-function normalizeDateString(v){ if(!v) return ''; if(/^\d{4}-\d{2}-\d{2}$/.test(v)) return v; const d=new Date(v); if(isNaN(d)) return ''; const tz=d.getTimezoneOffset()*60000; return new Date(d.getTime()-tz).toISOString().slice(0,10); }
-function stampSync(){ lastSyncedAt=new Date(); document.getElementById('lastSynced').textContent='Last synced: '+lastSyncedAt.toLocaleTimeString(); }
-function cryptoRandom(){ try{ return crypto.randomUUID(); }catch{ return Math.random().toString(36).slice(2); } }
+/**************
+ *  STATE
+ **************/
+let WORKSPACE_ID = '';
+let WORKSPACE_NAME = '';
+let activeTab = null;
+let tabData = {};
+let BASE = {};
+let sessionJWT = null;
+let authedUser = null;
+let currentUserKey = null;
+let dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null };
+let STORAGE_NS = null;
+let currentRole = 'owner';
+let lastSyncedISO = null;
 
-/* auth */
-function displayNameFor(u){ const f=u?.name?.first_name, l=u?.name?.last_name, e=u?.email_addresses?.[0]?.email_address; return [f,l].filter(Boolean).join(' ')||e||'User'; }
-function updateAuthUI(){ const name=displayNameFor(authedUser); const email=authedUser?.email_addresses?.[0]?.email_address||''; document.getElementById('avatar').textContent=initials(name,email); document.getElementById('userName').textContent=name; document.getElementById('userEmail').textContent=email; }
-async function verifySessionAndHydrate(){
-  sessionJWT = getSessionJWT(); if(!sessionJWT) return false;
-  try{
-    const r = await fetch(apiUrl('auth/check'), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
-    if(!r.ok) return false; const data=await r.json();
-    currentUserKey=data.user_id;
-    const parts=(data.name||'').split(/\s+/);
-    authedUser={ name:{ first_name:parts[0]||'', last_name:parts.slice(1).join(' ')||'' }, email_addresses: data.email?[{email_address:data.email}]:[] };
-    localStorage.setItem('stytch_user', JSON.stringify(authedUser));
-    updateAuthUI(); return true;
-  }catch{ return false; }
+/* Presence */
+const presence = new Map(); // other userId -> {name,email}
+
+/*******************
+ *  UTILITIES
+ *******************/
+const debounce = (fn, ms=600)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
+function getSessionJWT(){
+  const m = document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : (localStorage.getItem('stytch_session_jwt') || localStorage.getItem('solara_session_jwt') || null);
+}
+function computeStorageNS() {
+  const uidFromAuth = currentUserKey || (authedUser?.email_addresses?.[0]?.email_address) || null;
+  const widFromUrl  = WORKSPACE_ID || null;
+  const uid = uidFromAuth || localStorage.getItem('solara_last_uid') || 'anon';
+  const wid = widFromUrl  || localStorage.getItem('solara_last_ws')  || 'local';
+  STORAGE_NS = `solara:tabs:${uid}:${wid}`;
+  localStorage.setItem('solara_last_uid', uid);
+  localStorage.setItem('solara_last_ws', wid);
+}
+function storageKey(){ if(!STORAGE_NS) computeStorageNS(); return STORAGE_NS; }
+function normalizeDateString(input){
+  if(!input) return '';
+  if(typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
+  const d = new Date(input);
+  if (isNaN(d)) return '';
+  const tz = d.getTimezoneOffset()*60000;
+  return new Date(d.getTime()-tz).toISOString().slice(0,10);
+}
+function initials(name,email){
+  const parts=(name||'').trim().split(/\s+/).filter(Boolean);
+  if (parts.length) return parts.slice(0,2).map(x=>x[0].toUpperCase()).join('');
+  return (email||'?').slice(0,2).toUpperCase();
+}
+function displayNameFor(user){
+  const parts = [user?.name?.first_name, user?.name?.last_name].filter(Boolean);
+  if (parts.length) return parts.join(' ');
+  return user?.email_addresses?.[0]?.email_address || '';
+}
+function formatLastSynced(){
+  const el = document.getElementById('lastSynced');
+  if(!lastSyncedISO){ el.textContent = 'Last synced — …'; return; }
+  const d = new Date(lastSyncedISO);
+  el.textContent = 'Last synced — ' + d.toLocaleString();
 }
 
-/* members */
-async function fetchRole(){ const r=await fetch(apiUrl(`workspaces/${encodeURIComponent(WORKSPACE_ID)}/role`), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}); if(!r.ok) return 'viewer'; const j=await r.json().catch(()=>({})); return j.role||'viewer'; }
-async function listShares(){ const r=await fetch(apiUrl(`shares?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}); if(!r.ok) return []; const j=await r.json().catch(()=>({shares:[]})); return j.shares||[]; }
-async function invite(email){ return fetch(apiUrl('shares'), { method:'POST', headers:{'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json'}, body: JSON.stringify({ workspace_id: WORKSPACE_ID, email }) }); }
-async function patchShareRole(id, role){ return fetch(apiUrl(`shares/${id}`), { method:'PATCH', headers:{'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json'}, body: JSON.stringify({ role }) }); }
-async function removeShare(id){ return fetch(apiUrl(`shares/${id}`), { method:'DELETE', headers:{'Authorization':`Bearer ${sessionJWT}`}}); }
-async function transferOwner(toEmail){ return fetch(apiUrl(`workspaces/${encodeURIComponent(WORKSPACE_ID)}/transfer_owner`), { method:'POST', headers:{'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json'}, body: JSON.stringify({ to_email: toEmail }) }); }
-
-/* tasks */
-async function fetchTabs(){ const r=await fetch(apiUrl(`tasks?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}); if(!r.ok) return {}; const j=await r.json().catch(()=>({tabs:{}})); return j.tabs||{}; }
-async function saveTabsHTTP(tabs){ await fetch(apiUrl('tasks'), { method:'POST', headers:{'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json'}, body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs }) }); }
-
-/* presence: WS + HTTP heartbeat */
-function liveUrl(){ try{ const u=new URL(API_BASE); u.pathname=(u.pathname.replace(/\/+$/,'')+'/live').replace(/\/{2,}/g,'/'); u.search=`?ws=${encodeURIComponent(WORKSPACE_ID)}&token=${encodeURIComponent(sessionJWT)}`; u.protocol=u.protocol.replace('http','ws'); return u.toString(); }catch{ return null; } }
-function startPresencePoll(){
-  stopPresencePoll();
-  presencePollTimer=setInterval(async()=>{
-    try{
-      await fetch(apiUrl('presence/beat'), { method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json' }, body: JSON.stringify({ workspace_id: WORKSPACE_ID }) });
-      const r=await fetch(apiUrl(`presence?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
-      const j=r.ok?await r.json():{online:[]};
-      presence.clear();
-      (j.online||[]).filter(u=>u.id!==currentUserKey).forEach(p=> presence.set(p.id,{ name:p.name, email:p.email }));
-      renderPresence();
-    }catch{}
-  }, 5000);
-}
-function stopPresencePoll(){ if(presencePollTimer){ clearInterval(presencePollTimer); presencePollTimer=null; } }
-
-function startHeartbeat(){
-  stopHeartbeat();
-  heartbeatTimer=setInterval(async ()=>{
-    // send WS beat if connected, else HTTP beat
-    if (ws && ws.readyState===1){
-      try{ ws.send(JSON.stringify({ type:'beat', ws: WORKSPACE_ID })); }catch{}
-    } else {
-      try{ await fetch(apiUrl('presence/beat'), { method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json' }, body: JSON.stringify({ workspace_id: WORKSPACE_ID }) }); }catch{}
-    }
-  }, 20000);
-}
-function stopHeartbeat(){ if(heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer=null; } }
-
-function connectLive(){
-  const url=liveUrl(); if(!url){ startPresencePoll(); startHeartbeat(); return; }
-  try{ ws=new WebSocket(url); }catch{ startPresencePoll(); startHeartbeat(); return; }
-
-  ws.onopen=()=>{ wsRetry=0; stampSync(); stopPresencePoll(); startHeartbeat(); };
-  ws.onclose=()=>{ if (wsRetry<6){ const delay=Math.min(1000*Math.pow(2,wsRetry++),8000); setTimeout(connectLive,delay); } startPresencePoll(); startHeartbeat(); };
-  ws.onerror=()=>{ try{ ws.close(); }catch{} };
-  ws.onmessage=(ev)=>{
-    let msg={}; try{ msg=JSON.parse(ev.data||'{}'); }catch{}
-    if(msg.type==='hello'){
-      currentUserKey = msg.you?.user_id || currentUserKey;
-      presence.clear();
-      (msg.online||[]).forEach(p=> presence.set(p.id,{ name:p.name, email:p.email }));
-      renderPresence();
-
-      tabData = migrateShapes(msg.tabs||{});
-      if(Object.keys(tabData).length===0){ tabData['Click to edit']={ todo:[], inprogress:[], done:[] }; }
-      if(!activeTab) activeTab=Object.keys(tabData)[0];
-      renderTabs(); switchTab(activeTab);
-      stampSync();
-      return;
-    }
-    if(msg.type==='tabs:set' && msg.ws===WORKSPACE_ID){
-      tabData = migrateShapes(msg.tabs||{});
-      if(!tabData[activeTab]) activeTab=Object.keys(tabData)[0]||null;
-      renderTabs(); switchTab(activeTab); stampSync(); return;
-    }
-    if(msg.type==='presence/join' && msg.ws===WORKSPACE_ID){ if(msg.by && msg.by!==currentUserKey){ presence.set(msg.by,{ name:msg.name||'', email:msg.email||'' }); renderPresence(); } return; }
-    if(msg.type==='presence/leave' && msg.ws===WORKSPACE_ID){ presence.delete(msg.by); renderPresence(); return; }
-  };
-}
-function liveSend(obj){ if(ws && ws.readyState===1){ try{ ws.send(JSON.stringify({ ...obj, ws: WORKSPACE_ID })); }catch{} } }
-
-async function httpBeatOnce(){ try{ await fetch(apiUrl('presence/beat'), { method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json' }, body: JSON.stringify({ workspace_id: WORKSPACE_ID }) }); }catch{} }
-
-/* presence UI */
-function renderPresence(){
-  const avatars=document.getElementById('presenceAvatars');
-  const list=document.getElementById('presenceList');
-  const count=document.getElementById('presenceCount');
-  avatars.innerHTML=''; list.innerHTML='';
-
-  const others=[...presence.entries()].map(([id,v])=>({id,...v})).sort((a,b)=>(a.name||a.email).localeCompare(b.name||b.email));
-  count.textContent = others.length ? '' : '0 online';
-
-  const max=4;
-  others.slice(0,max).forEach(p=>{
-    const span=document.createElement('span');
-    span.className='avatar inline-flex items-center justify-center h-7 w-7 rounded-full bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 text-[11px] font-semibold ring-2 ring-white';
-    span.title=p.name||p.email; span.textContent=initials(p.name,p.email);
-    const dot=document.createElement('span'); dot.className='presence-dot'; span.appendChild(dot);
-    avatars.appendChild(span);
-
-    const row=document.createElement('div');
-    row.className='flex items-center gap-2';
-    row.innerHTML=`<div class="relative inline-flex items-center justify-center h-6 w-6 rounded-full bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 text-[10px] font-semibold">
-      ${initials(p.name,p.email)}<span class="presence-dot" style="right:-1px;bottom:-1px;width:8px;height:8px"></span></div>
-      <div class="truncate">${p.name||p.email}</div>`;
-    list.appendChild(row);
-  });
-}
-document.getElementById('presenceBtn').onclick=()=> document.getElementById('presenceTooltip').classList.toggle('hidden');
-
-/* shapes + UI */
-function migrateShapes(data){
-  const out=JSON.parse(JSON.stringify(data||{}));
-  Object.keys(out).forEach(tab=>{
+/*******************
+ *  SHAPE & MERGE
+ *******************/
+const COLS = ['todo','inprogress','done'];
+function migrateTaskShapes(data){
+  const out = JSON.parse(JSON.stringify(data||{}));
+  Object.keys(out||{}).forEach(tab=>{
     COLS.forEach(col=>{
-      let pos=1;
+      let posCounter=1;
       out[tab][col]=(out[tab][col]||[]).map(t=>({
-        id: t.id||`task-${cryptoRandom()}`,
+        id: t.id || `task-${cryptoRandom()}`,
         content: typeof t.content==='string'?t.content:'',
         dueDate: normalizeDateString(t.dueDate),
         priority: ['High','Medium','Low'].includes(t.priority)?t.priority:'Medium',
-        pos: Number.isFinite(+t.pos)?+t.pos:pos++,
-        upd: Number.isFinite(+t.upd)?+t.upd:Date.now(),
-        by: t.by||currentUserKey||'unknown'
+        pos: isFinite(Number(t.pos))?Number(t.pos):posCounter++,
+        upd: isFinite(Number(t.upd))?Number(t.upd):Date.now(),
+        by: t.by || (currentUserKey || 'unknown')
       }));
     });
   });
   return out;
 }
-function renderTabs(){
-  const node=document.getElementById('tabs'); node.innerHTML='';
-  Object.keys(tabData).forEach(name=>{
-    const b=document.createElement('button');
-    b.className='tab-button px-4 py-1.5 rounded-full text-sm font-medium bg-transparent border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-white transition-all duration-150 truncate max-w-[160px]';
-    if(name===activeTab){ b.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'); }
-    b.dataset.tab=name; b.textContent=name;
-    b.onclick=()=>{ switchTab(name); };
-    b.ondblclick=()=>{ if(currentRole==='viewer') return; const nn=prompt('Rename tab:',name); if(!nn||!nn.trim()||nn===name||tabData[nn])return; tabData[nn]=tabData[name]; delete tabData[name]; if(activeTab===name) activeTab=nn; renderTabs(); switchTab(activeTab); pushTabs(); };
-    b.oncontextmenu=(e)=>{ e.preventDefault(); if(currentRole==='viewer')return; if(confirm(`Delete tab "${name}"?`)){ delete tabData[name]; if(activeTab===name) activeTab=Object.keys(tabData)[0]||null; renderTabs(); renderBoard(); pushTabs(); } };
-    node.appendChild(b);
+function cryptoRandom(){ try{ return crypto.randomUUID(); }catch{ return Math.random().toString(36).slice(2); } }
+function clone(o){ return JSON.parse(JSON.stringify(o||{})); }
+function indexTabs(tabs){
+  const map=new Map();
+  Object.keys(tabs||{}).forEach(tab=> COLS.forEach(col=> (tabs[tab]?.[col]||[]).forEach(task=> map.set(task.id,{task,tab,col}))));
+  return map;
+}
+function sortCols(tabs){ Object.keys(tabs||{}).forEach(tab=> COLS.forEach(col=> tabs[tab][col].sort((a,b)=> (a.pos||0)-(b.pos||0) || (a.upd||0)-(b.upd||0)))); }
+function reindexColumn(list){ list.forEach((t,i)=> t.pos=i+1); }
+function mergeTabs(BASE0, LOCAL0, REMOTE0){
+  const BASE = clone(migrateTaskShapes(BASE0||{}));
+  const LOCAL= clone(migrateTaskShapes(LOCAL0||{}));
+  const REM  = clone(migrateTaskShapes(REMOTE0||{}));
+  const baseIdx=indexTabs(BASE), locIdx=indexTabs(LOCAL), remIdx=indexTabs(REM);
+  const out=clone(BASE);
+  new Set([...Object.keys(LOCAL||{}),...Object.keys(REM||{}),...Object.keys(BASE||{})]).forEach(t=> out[t]=out[t]||{todo:[],inprogress:[],done:[]});
+  const ids=new Set([...baseIdx.keys(),...locIdx.keys(),...remIdx.keys()]);
+  function place(t,tab,col,pos){ out[tab]=out[tab]||{todo:[],inprogress:[],done:[]}; const list=out[tab][col]; const i=list.findIndex(x=>x.id===t.id); if(i!==-1) list[i]=t; else list.push(t); if(isFinite(pos)) t.pos=pos; }
+  function remove(id){ Object.keys(out).forEach(tab=> COLS.forEach(col=>{ const L=out[tab][col]; const i=L.findIndex(x=>x.id===id); if(i!==-1) L.splice(i,1);})); }
+  function loc(idx,id){ const r=idx.get(id); return r?{tab:r.tab,col:r.col,task:r.task}:null; }
+
+  ids.forEach(id=>{
+    const b=loc(baseIdx,id), l=loc(locIdx,id), r=loc(remIdx,id);
+    const bt=b?.task, lt=l?.task, rt=r?.task;
+    if(!lt && !rt){ remove(id); return; }
+    if(lt && !rt){ place(lt,l.tab,l.col,lt.pos); return; }
+    if(rt && !lt){ place(rt,r.tab,r.col,rt.pos); return; }
+    const newer=(a,b)=> (a?.upd||0)>=(b?.upd||0)?a:b;
+    const winner=newer(lt,rt);
+    let tab=l.tab, col=l.col, pos=lt.pos;
+    if(l.tab!==r.tab || l.col!==r.col){
+      if((lt.upd||0)===(rt.upd||0)) { tab=l.tab; col=l.col; pos=lt.pos; }
+      else if((lt.upd||0)>(rt.upd||0)){ tab=l.tab; col=l.col; pos=lt.pos; }
+      else { tab=r.tab; col=r.col; pos=rt.pos; }
+    }
+    const merged={ ...bt, ...rt, ...lt };
+    ['content','dueDate','priority','pos','upd','by'].forEach(k=>{
+      if(lt && rt) merged[k] = (lt.upd||0) >= (rt.upd||0) ? lt[k] : rt[k];
+      else if(lt) merged[k]=lt[k]; else if(rt) merged[k]=rt[k];
+    });
+    place(merged,tab,col,pos);
+  });
+
+  Object.keys(out).forEach(tab=> COLS.forEach(col=> reindexColumn(out[tab][col])));
+  sortCols(out);
+  return out;
+}
+
+/*******************
+ *  LOCAL STORAGE
+ *******************/
+function loadTabsFromStorage(){ try{ const raw=localStorage.getItem(storageKey()); return migrateTaskShapes(raw?JSON.parse(raw):{}); }catch{ return {}; } }
+function saveTabsToStorage(){ try{ localStorage.setItem(storageKey(), JSON.stringify(tabData)); }catch{} }
+
+/*******************
+ *  CLOUD (includes LAST SYNCED updates)
+ *******************/
+async function fetchCloudTabs(){
+  if(!sessionJWT || !WORKSPACE_ID) return null;
+  try{
+    const url = apiUrl('tasks') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
+    const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
+    if(!res.ok) return null;
+    const data = await res.json();
+    // server-owned updated_at -> Last synced
+    if (data.updated_at){ lastSyncedISO = data.updated_at; formatLastSynced(); }
+    return data.tabs || {};
+  }catch{ return null; }
+}
+async function postCloudTabs(tabs){
+  if(!sessionJWT || !WORKSPACE_ID) return false;
+  try{
+    const res = await fetch(apiUrl('tasks'), {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionJWT}` },
+      body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs })
+    });
+    if (!res.ok) return false;
+    const j = await res.json().catch(()=>({}));
+    if (j.updated_at){ lastSyncedISO = j.updated_at; formatLastSynced(); }
+    return true;
+  }catch{ return false; }
+}
+const saveTabsToCloud = debounce(async ()=>{
+  if(!sessionJWT || !WORKSPACE_ID) return;
+  if(currentRole==='viewer') return;
+  // pull-merge-push (prevents overwrite)
+  const REM = await fetchCloudTabs();
+  if(REM==null) return;
+  const merged = mergeTabs(BASE, tabData, REM);
+  const ok = await postCloudTabs(merged);
+  if(ok){ tabData = merged; BASE = clone(merged); saveTabsToStorage(); }
+}, 500);
+
+/*******************
+ *  AUTH
+ *******************/
+function requireReauth(){
+  try{
+    localStorage.setItem('solara_last_uid', currentUserKey || localStorage.getItem('solara_last_uid') || 'anon');
+    localStorage.setItem('solara_last_ws',  WORKSPACE_ID   || localStorage.getItem('solara_last_ws')  || 'local');
+  }catch{}
+  location.replace('/sign-in.html');
+}
+function hydrateFromAuthCheckPayload(data){
+  const full = (data?.name||'').trim();
+  const parts = full ? full.split(/\s+/) : [];
+  const first = parts[0] || '';
+  const last  = parts.slice(1).join(' ') || '';
+  const email = data?.email || '';
+  const uid   = data?.user_id || email || 'anon';
+  currentUserKey = uid;
+  computeStorageNS();
+  return { name:{ first_name:first, last_name:last }, email_addresses: email ? [{ email_address: email }] : [] };
+}
+function updateAuthUI(){
+  const avatar = document.getElementById('avatar');
+  const nameEl = document.getElementById('userName');
+  const emailEl = document.getElementById('userEmail');
+  const u = authedUser || { name:{}, email_addresses:[] };
+  const full = displayNameFor(u);
+  const em   = u?.email_addresses?.[0]?.email_address || '';
+  avatar.textContent = initials(full, em);
+  nameEl.textContent = full || 'User';
+  emailEl.textContent = em;
+}
+function wireAuthButtons(){
+  document.getElementById('userButton').onclick = () => document.getElementById('userMenu').classList.toggle('hidden');
+  document.addEventListener('click', (e)=>{
+    const m = document.getElementById('userMenu');
+    const b = document.getElementById('userButton');
+    if(!m.classList.contains('hidden') && !m.contains(e.target) && !b.contains(e.target)) m.classList.add('hidden');
+  });
+  document.getElementById('signOutBtn').onclick = async ()=>{
+    try{ if(sessionJWT){ await fetch(apiUrl('logout'), { method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}` } }).catch(()=>{}); } }
+    finally{ requireReauth(); }
+  };
+  document.getElementById('addUserBtn').onclick = ()=> openMembers();
+}
+async function verifySessionAndHydrate(){
+  sessionJWT = getSessionJWT();
+  authedUser = JSON.parse(localStorage.getItem('stytch_user') || 'null');
+  if(!sessionJWT) return false;
+  updateAuthUI();
+  try{
+    const res = await fetch(apiUrl('auth/check'), { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
+    if(!res.ok){ return false; }
+    const data = await res.json();
+    const fresh = hydrateFromAuthCheckPayload(data);
+    if(!authedUser || (!authedUser.name && (!authedUser.email_addresses||!authedUser.email_addresses.length))){
+      authedUser = fresh; localStorage.setItem('stytch_user', JSON.stringify(authedUser));
+    } else {
+      if (fresh.email_addresses?.[0]?.email_address && !authedUser.email_addresses?.length){ authedUser.email_addresses = fresh.email_addresses; }
+      if ((fresh.name?.first_name||fresh.name?.last_name) && !(authedUser.name?.first_name||authedUser.name?.last_name)) authedUser.name = fresh.name;
+      localStorage.setItem('stytch_user', JSON.stringify(authedUser));
+    }
+    updateAuthUI();
+    return true;
+  }catch{ return !!authedUser; }
+}
+
+/*******************
+ *  MEMBERS (UI + API)
+ *******************/
+function openMembers(){ document.getElementById('membersModal').classList.remove('hidden'); loadMembers(); }
+function closeMembers(){ document.getElementById('membersModal').classList.add('hidden'); }
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btn = document.getElementById('manageBtn');
+  if(btn){ btn.addEventListener('click', ()=>{ if(!WORKSPACE_ID) return alert('Open a workspace to manage members.'); openMembers(); }); }
+});
+async function listShares(){
+  if(!sessionJWT) return [];
+  const url = apiUrl('shares') + `?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`;
+  const res = await fetch(url, { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
+  if(!res.ok) return [];
+  const data = await res.json();
+  // my role
+  currentRole = 'owner';
+  const myself = (authedUser?.email_addresses?.[0]?.email_address||'').toLowerCase();
+  const wres   = await fetch(apiUrl('workspaces'), { headers:{ 'Authorization':`Bearer ${sessionJWT}` } }).then(r=>r.ok?r.json():{workspaces:[]}).catch(()=>({workspaces:[]}));
+  const wsRow  = (wres.workspaces||[]).find(w=>w.id===WORKSPACE_ID);
+  if (wsRow && wsRow.owner_id){
+    const authId = JSON.parse(localStorage.getItem('stytch_auth')||'{}').user_id || '__';
+    if (wsRow.owner_id !== authId) {
+      const share = (data.shares||[]).find(s=> (s.email||'').toLowerCase()===myself && s.accepted_by_user_id);
+      if(share) currentRole = (share.role||'editor');
+    }
+  }
+  return data.shares || [];
+}
+async function postShare(email){
+  return fetch(apiUrl('shares'), { method:'POST', headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${sessionJWT}` }, body: JSON.stringify({ email, workspace_id: WORKSPACE_ID }) });
+}
+async function patchShare(id, role){
+  return fetch(apiUrl(`shares/${id}`), { method:'PATCH', headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${sessionJWT}` }, body: JSON.stringify({ role }) });
+}
+async function deleteShare(id){
+  return fetch(apiUrl(`shares/${id}`), { method:'DELETE', headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
+}
+async function loadMembers(){
+  const list = document.getElementById('membersList');
+  list.innerHTML = '<div class="py-6 text-sm text-gray-500">Loading…</div>';
+  const shares = await listShares();
+  if(!shares.length){ list.innerHTML = '<div class="py-6 text-sm text-gray-500">No members yet. Invite someone above.</div>'; return; }
+  list.innerHTML = '';
+  shares.forEach(s=>{
+    const row = document.createElement('div');
+    row.className = 'flex items-center justify-between py-3';
+    const who = document.createElement('div');
+    who.className = 'flex items-center gap-3';
+    const bubble = document.createElement('div');
+    bubble.className = 'h-8 w-8 rounded-full bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xs font-semibold';
+    bubble.textContent = (s.email || '?').slice(0,2).toUpperCase();
+    const meta = document.createElement('div');
+    meta.innerHTML = `<div class="text-sm font-medium">${s.email || '—'}</div>`;
+    who.appendChild(bubble); who.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-2';
+    if (currentRole === 'owner') {
+      const sel = document.createElement('select');
+      sel.className = 'text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800';
+      ['editor','viewer'].forEach(r=>{ const o=document.createElement('option'); o.value=r; o.text=r; if(String(s.role||'editor')===r) o.selected=true; sel.appendChild(o); });
+      sel.onchange = async ()=>{ const r=await patchShare(s.id, sel.value); if(!r.ok) alert('Failed to update role'); };
+      const del = document.createElement('button');
+      del.className = 'px-2 py-1 text-xs rounded bg-red-50 text-red-600 hover:bg-red-100';
+      del.textContent = 'Remove';
+      del.onclick = async ()=>{ if(!confirm('Remove this member?')) return; const r=await deleteShare(s.id); if(r.ok) loadMembers(); else alert('Failed to remove'); };
+      actions.appendChild(sel); actions.appendChild(del);
+    }
+    row.appendChild(who); row.appendChild(actions);
+    list.appendChild(row);
   });
 }
-function switchTab(tab){ if(!tabData[tab]) return; activeTab=tab; document.querySelectorAll('.tab-button').forEach(x=>x.classList.remove('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30')); const btn=[...document.querySelectorAll('.tab-button')].find(b=>b.dataset.tab===tab); if(btn) btn.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'); renderBoard(); }
-function ensureAtLeastOne(){ const cols=tabData[activeTab]; if(!cols) return; if((cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0)===0){ const id=`task-${cryptoRandom()}`; cols.todo.push({ id, content:'', dueDate:'', priority:'Medium', pos:1, upd:Date.now(), by: currentUserKey }); } }
+async function inviteMember(){
+  const input = document.getElementById('inviteEmail');
+  const email = (input.value||'').trim().toLowerCase();
+  if(!email) return;
+  if(!WORKSPACE_ID){ alert('No workspace selected.'); return; }
+  const r = await postShare(email);
+  if(r.ok){ input.value=''; loadMembers(); alert('Invitation created.'); }
+  else { alert('Invite failed'); }
+}
 
+/*******************
+ *  TABS + UI
+ *******************/
+function renderTabs(){
+  const tabsContainer = document.getElementById('tabs');
+  tabsContainer.innerHTML = '';
+  Object.keys(tabData).forEach(name=>{
+    const btn = document.createElement('button');
+    btn.className = 'tab-button px-4 py-1.5 rounded-full text-sm font-medium bg-transparent border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-white transition-all duration-150 truncate max-w-[160px]';
+    if (name === activeTab) btn.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30');
+    btn.dataset.tab = name; btn.textContent = name;
+    btn.onclick = ()=> switchTab(name);
+    btn.ondblclick = ()=>{
+      const newName = prompt('Rename tab:', name);
+      if (!newName || !newName.trim() || newName === name || tabData[newName]) return;
+      tabData[newName] = tabData[name];
+      delete tabData[name];
+      if (activeTab === name) activeTab = newName;
+      saveTabsToStorage(); renderTabs(); switchTab(activeTab); saveTabsToCloud();
+    };
+    btn.oncontextmenu = (e)=>{ e.preventDefault(); deleteTab(name); };
+    tabsContainer.appendChild(btn);
+  });
+}
+function promptNewTab(){ const name = prompt('Enter tab name:'); if(!name || !name.trim()) return; addTab(name.trim()); }
+function addTab(name){ if(tabData[name]) return switchTab(name); tabData[name] = { todo:[], inprogress:[], done:[] }; saveTabsToStorage(); renderTabs(); switchTab(name); saveTabsToCloud(); }
+function deleteTab(name){ if(!confirm(`Delete tab "${name}" and all its tasks?`)) return; delete tabData[name]; if(activeTab===name) activeTab = Object.keys(tabData)[0]||null; saveTabsToStorage(); renderTabs(); renderBoard(); saveTabsToCloud(); }
+
+function switchTab(tabName){
+  if(!tabData[tabName]) return;
+  activeTab = tabName;
+  document.querySelectorAll('.tab-button').forEach(b=> b.classList.remove('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'));
+  const activeBtn = Array.from(document.querySelectorAll('.tab-button')).find(b=>b.dataset.tab===tabName);
+  if (activeBtn){ activeBtn.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'); }
+  renderBoard();
+}
+function ensureAtLeastOneTask(){
+  const cols = tabData[activeTab]; if(!cols) return;
+  if((cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0)===0){
+    const id=`task-${cryptoRandom()}`; cols.todo.push({ id, content:'', dueDate:'', priority:'Medium', pos:1, upd:Date.now(), by:currentUserKey });
+  }
+}
+function renderBoard(){
+  const columns = COLS;
+  columns.forEach(col=>{
+    const colEl = document.getElementById(col);
+    colEl.querySelectorAll('[data-task]')?.forEach(n => n.remove());
+    colEl.ondragover = (e)=>{
+      e.preventDefault(); colEl.classList.add('drag-over','show-drop');
+      const after = getDragAfterElement(colEl, e.clientY);
+      const indicator = colEl.querySelector('.drop-indicator');
+      if(after == null){ colEl.appendChild(indicator); } else { colEl.insertBefore(indicator, after); }
+      dragContext.overCol = colEl.dataset.col;
+      dragContext.insertIndex = computeInsertIndex(colEl, indicator);
+    };
+    colEl.ondragleave = ()=> colEl.classList.remove('drag-over','show-drop');
+    colEl.ondrop = (e)=>{ e.preventDefault(); colEl.classList.remove('drag-over','show-drop'); const id = dragContext.id; if(!id) return; commitReorder(id, dragContext.fromCol, colEl.dataset.col, dragContext.insertIndex); clearDragContext(); };
+  });
+  if(!activeTab || !tabData[activeTab]) return;
+  ensureAtLeastOneTask();
+  const data = tabData[activeTab];
+  COLS.forEach(col=>{
+    const colEl=document.getElementById(col);
+    (data[col]||[]).sort((a,b)=> (a.pos||0)-(b.pos||0)).forEach(t=> colEl.appendChild(createTaskElement(t.id, t.content, t.dueDate, t.priority, col, t.pos)));
+  });
+}
 function createTaskElement(id, content='', dueDate='', priority='Medium', column, pos){
-  const w=document.createElement('div');
-  w.id=id; w.setAttribute('data-task','1'); w.draggable=currentRole!=='viewer';
-  w.className='relative p-3 rounded bg-white dark:bg-gray-700 shadow cursor-move mb-2'; w.setAttribute('data-column',column);
+  const wrap = document.createElement('div');
+  wrap.id=id; wrap.setAttribute('data-task','1'); wrap.draggable = currentRole!=='viewer';
+  wrap.className = 'relative p-3 rounded bg-white dark:bg-gray-700 shadow cursor-move mb-2';
+  wrap.setAttribute('data-column', column);
 
-  const editable=document.createElement('div'); editable.className='editable w-full font-medium mb-1'; editable.contentEditable=(currentRole!=='viewer'); editable.innerText=content;
-  const placeholder=document.createElement('span'); placeholder.className='absolute left-3 top-3 text-sm text-gray-400 pointer-events-none'; placeholder.textContent='Click to edit...';
-  function toggle(){ placeholder.style.display = editable.innerText.trim()===''?'block':'none'; }
+  const editable = document.createElement('div'); editable.className='editable w-full font-medium mb-1'; editable.contentEditable = currentRole!=='viewer'; editable.innerText = content;
+  const placeholder = document.createElement('span'); placeholder.className='absolute left-3 top-3 text-sm text-gray-400 pointer-events-none'; placeholder.textContent='Click to edit...';
+  function togglePlaceholder(){ placeholder.style.display = editable.innerText.trim()==='' ? 'block' : 'none'; }
 
-  const row=document.createElement('div'); row.className='flex items-center gap-2';
-  const dateInput=document.createElement('input'); dateInput.type='date'; dateInput.value=normalizeDateString(dueDate)||''; dateInput.disabled=(currentRole==='viewer'); dateInput.className='mt-1 text-xs bg-transparent text-gray-700 dark:text-gray-200 border border-transparent rounded px-1 date-badge';
-  const prioritySelect=document.createElement('select'); prioritySelect.disabled=(currentRole==='viewer'); prioritySelect.className='mt-1 ml-2 text-xs bg-transparent text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded px-1';
-  ['High','Medium','Low'].forEach(level=>{ const o=document.createElement('option'); o.value=level; o.text=level; if(level===priority) o.selected=true; prioritySelect.appendChild(o); });
-  const del=document.createElement('button'); del.className='absolute top-2 right-2 text-gray-400 hover:text-red-500'; del.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'; del.title='Delete Task'; del.onclick=()=>{ if(currentRole==='viewer')return; if(confirm('Delete this task?')) removeTaskById(id); };
+  const row = document.createElement('div'); row.className='flex items-center gap-2';
+  const dateInput = document.createElement('input'); dateInput.type='date'; dateInput.value=normalizeDateString(dueDate)||''; dateInput.disabled=(currentRole==='viewer'); dateInput.className='mt-1 text-xs bg-transparent text-gray-700 dark:text-gray-200 border border-transparent rounded px-1 date-badge';
+  const prioritySelect = document.createElement('select'); prioritySelect.disabled=(currentRole==='viewer'); prioritySelect.className='mt-1 ml-2 text-xs bg-transparent text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded px-1'; ['High','Medium','Low'].forEach(level=>{ const o=document.createElement('option'); o.value=level; o.text=level; if(level===priority) o.selected=true; prioritySelect.appendChild(o); });
+  const del = document.createElement('button'); del.className='absolute top-2 right-2 text-gray-400 hover:text-red-500'; del.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'; del.title='Delete Task'; del.onclick=()=>{ if(confirm('Delete this task?')) removeTaskById(id); };
 
-  w.addEventListener('dragstart',e=>{ if(currentRole==='viewer'){ e.preventDefault(); return; } w.classList.add('dragging'); e.dataTransfer.setData('text/plain',id); dragContext.id=id; dragContext.fromCol=w.getAttribute('data-column'); });
-  w.addEventListener('dragend',()=>{ w.classList.remove('dragging'); });
+  wrap.addEventListener('dragstart', e=>{ if(currentRole==='viewer'){ e.preventDefault(); return; } wrap.classList.add('dragging'); e.dataTransfer.setData('text/plain', id); dragContext.id=id; dragContext.fromCol=wrap.getAttribute('data-column'); });
+  wrap.addEventListener('dragend', ()=> wrap.classList.remove('dragging'));
 
-  editable.addEventListener('input', ()=>{ toggle(); persistTaskEdits(id,{ content: editable.innerText.trim() }); });
+  editable.addEventListener('input', ()=>{ togglePlaceholder(); persistTaskEdits(id,{ content: editable.innerText.trim() }); });
   editable.addEventListener('blur', ()=> persistTaskEdits(id,{ content: editable.innerText.trim() }));
   dateInput.addEventListener('change', ()=> persistTaskEdits(id,{ dueDate: normalizeDateString(dateInput.value) }));
   prioritySelect.addEventListener('change', ()=> persistTaskEdits(id,{ priority: prioritySelect.value||'Medium' }));
 
   row.appendChild(dateInput); row.appendChild(prioritySelect);
-  w.appendChild(editable); w.appendChild(placeholder); w.appendChild(row); w.appendChild(del);
-  toggle(); return w;
+  wrap.appendChild(editable); wrap.appendChild(placeholder); wrap.appendChild(row); wrap.appendChild(del);
+  togglePlaceholder();
+  return wrap;
 }
-
-const dragContext={ id:null, fromCol:null, overCol:null, insertIndex:null };
-function clearDrag(){ dragContext.id=null; dragContext.fromCol=null; dragContext.overCol=null; dragContext.insertIndex=null; }
-function getAfter(container,y){ const els=[...container.querySelectorAll('[data-task]:not(.dragging)')]; return els.reduce((closest,child)=>{ const box=child.getBoundingClientRect(); const off=y-box.top-box.height/2; if(off<0 && off>closest.offset){ return {offset:off, element:child}; } else return closest; },{offset:-Infinity}).element; }
+function clearDragContext(){ dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null }; }
+function getDragAfterElement(container, y){
+  const els = [...container.querySelectorAll('[data-task]:not(.dragging)')];
+  return els.reduce((closest, child) => {
+    const box=child.getBoundingClientRect(); const offset=y - box.top - box.height/2;
+    if (offset<0 && offset>closest.offset) return { offset, element: child };
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
 function computeInsertIndex(colEl, indicator){
   const siblings=[...colEl.querySelectorAll('[data-task]')];
   if(siblings.length===0) return 0;
   const all=[...colEl.children]; let index=0;
-  for(let i=0;i<all.length;i++){ const el=all[i]; if(el===indicator){ index=[...all.slice(0,i)].filter(n=>n.hasAttribute && n.hasAttribute('data-task')).length; return index; } }
+  for(let i=0;i<all.length;i++){ const el=all[i]; if(el===indicator){ index=[...all.slice(0,i)].filter(n=> n.hasAttribute && n.hasAttribute('data-task')).length; return index; } }
   return siblings.length;
 }
-function newPosBetween(prev,next){ const A=Number.isFinite(prev)?+prev:0; const B=Number.isFinite(next)?+next:A+2; if(B-A>1e-6) return A+(B-A)/2; return A+0.000001; }
-function reindex(list){ list.forEach((t,i)=> t.pos=i+1); }
-
-function renderBoard(){
-  ['todo','inprogress','done'].forEach(col=>{
-    const colEl=document.getElementById(col);
-    colEl.querySelectorAll('[data-task]')?.forEach(n=>n.remove());
-    colEl.ondragover=(e)=>{ e.preventDefault(); colEl.classList.add('drag-over','show-drop'); const after=getAfter(colEl,e.clientY); const indicator=colEl.querySelector('.drop-indicator'); if(after==null){ colEl.appendChild(indicator); } else { colEl.insertBefore(indicator,after); } dragContext.overCol=colEl.dataset.col; dragContext.insertIndex=computeInsertIndex(colEl,indicator); };
-    colEl.ondragleave=()=>{ colEl.classList.remove('drag-over','show-drop'); };
-    colEl.ondrop=(e)=>{ e.preventDefault(); colEl.classList.remove('drag-over','show-drop'); const id=dragContext.id; if(!id) return; commitReorder(id,dragContext.fromCol,colEl.dataset.col,dragContext.insertIndex); clearDrag(); };
-  });
-  if(!activeTab || !tabData[activeTab]) return;
-  ensureAtLeastOne();
-  const data=tabData[activeTab];
-  COLS.forEach(col=>{ const colEl=document.getElementById(col); (data[col]||[]).sort((a,b)=>(a.pos||0)-(b.pos||0)).forEach(t=> colEl.appendChild(createTaskElement(t.id,t.content,t.dueDate,t.priority,col,t.pos))); });
-}
-
-/* mutations -> server */
-function persistTaskEdits(taskId, patch){
-  if(!activeTab || !tabData[activeTab]) return;
-  for(const col of COLS){
-    const list=tabData[activeTab][col]||[];
-    const idx=list.findIndex(t=>t.id===taskId);
-    if(idx!==-1){
-      if('dueDate' in patch) patch.dueDate=normalizeDateString(patch.dueDate);
-      list[idx]={ ...list[idx], ...patch, upd:Date.now(), by:currentUserKey };
-      break;
-    }
-  }
-  pushTabs();
-}
-function removeTaskById(taskId){
-  if(!activeTab || !tabData[activeTab]) return;
-  for(const col of COLS){
-    const list=tabData[activeTab][col]||[];
-    const idx=list.findIndex(t=>t.id===taskId);
-    if(idx!==-1){ list.splice(idx,1); break; }
-  }
-  renderBoard(); pushTabs();
-}
-function clearAllTasks(){ if(currentRole==='viewer') return; if(!activeTab) return; if(!confirm('Clear all tasks in this tab?')) return; tabData[activeTab]={ todo:[], inprogress:[], done:[] }; renderBoard(); pushTabs(); }
-function addNewTask(){
-  if(currentRole==='viewer') return;
-  if(!activeTab){ const def='Click to edit'; if(!tabData[def]) tabData[def]={ todo:[], inprogress:[], done:[] }; activeTab=def; renderTabs(); }
-  const id=`task-${cryptoRandom()}`; const now=Date.now();
-  const t={ id, content:'', dueDate:'', priority:'Medium', pos:(tabData[activeTab].todo.slice(-1)[0]?.pos||0)+1, upd:now, by:currentUserKey };
-  tabData[activeTab].todo.push(t); renderBoard(); pushTabs();
+function newPosBetween(prev,next){
+  const A=isFinite(prev)?Number(prev):0; const B=isFinite(next)?Number(next):A+2;
+  if (B-A>1e-6) return A+(B-A)/2;
+  return A+0.000001;
 }
 function commitReorder(taskId, fromCol, toCol, insertIndex){
-  if(currentRole==='viewer') return;
+  if(!activeTab || !tabData[activeTab]) return; if(currentRole==='viewer') return;
   const cols=tabData[activeTab];
   let moved; const fromList=cols[fromCol]||[]; const i=fromList.findIndex(t=>t.id===taskId);
-  if(i!==-1){ moved=fromList.splice(i,1)[0]; }
-  if(!moved) return;
-  const target=cols[toCol]=cols[toCol]||[];
-  if(insertIndex==null||insertIndex<0) insertIndex=target.length;
-  if(insertIndex>target.length) insertIndex=target.length;
-  const prev=target[insertIndex-1]?.pos, next=target[insertIndex]?.pos;
+  if(i!==-1) moved = fromList.splice(i,1)[0]; if(!moved) return;
+  const target = cols[toCol]=cols[toCol]||[];
+  if(insertIndex==null||insertIndex<0) insertIndex=target.length; if(insertIndex>target.length) insertIndex=target.length;
+  const prev=target[insertIndex-1]?.pos; const next=target[insertIndex]?.pos;
   moved.pos=newPosBetween(prev,next); moved.upd=Date.now(); moved.by=currentUserKey;
   target.splice(insertIndex,0,moved);
-  if(!Number.isFinite(prev)||!Number.isFinite(next)||Math.abs((next||moved.pos)-(prev||0))<1e-6){ reindex(target); }
-  renderBoard(); pushTabs();
+  if(!isFinite(prev)||!isFinite(next)||Math.abs((next||moved.pos)-(prev||0))<1e-6){ reindexColumn(target); }
+  saveTabsToStorage(); renderBoard(); saveTabsToCloud();
 }
-const pushTabs = debounce(()=>{ try{ liveSend({ type:'tabs:update', tabs: tabData }); }catch{} saveTabsHTTP(tabData).catch(()=>{}); stampSync(); }, 200);
+function persistTaskEdits(taskId, patch){
+  if(!activeTab || !tabData[activeTab]) return; if(currentRole==='viewer') return;
+  for(const col of COLS){
+    const list=tabData[activeTab][col]||[]; const idx=list.findIndex(t=>t.id===taskId);
+    if(idx!==-1){ if('dueDate' in patch) patch.dueDate=normalizeDateString(patch.dueDate); list[idx]={...list[idx],...patch,upd:Date.now(),by:currentUserKey}; break; }
+  }
+  saveTabsToStorage(); saveTabsToCloud();
+}
+function removeTaskById(taskId){
+  if(!activeTab || !tabData[activeTab]) return; if(currentRole==='viewer') return;
+  for(const col of COLS){ const list=tabData[activeTab][col]||[]; const idx=list.findIndex(t=>t.id===taskId); if(idx!==-1){ list.splice(idx,1); break; } }
+  saveTabsToStorage(); renderBoard(); saveTabsToCloud();
+}
+function clearAllTasks(){
+  if(!activeTab) return; if(currentRole==='viewer') return;
+  if(!confirm('Clear all tasks in this tab?')) return;
+  tabData[activeTab]={ todo:[], inprogress:[], done:[] };
+  saveTabsToStorage(); renderBoard(); saveTabsToCloud();
+}
+function addNewTask(){
+  if(currentRole==='viewer') return;
+  if(!activeTab){ const def='Click to edit'; if(!tabData[def]) tabData[def]={ todo:[],inprogress:[],done:[] }; activeTab=def; renderTabs(); }
+  const id=`task-${cryptoRandom()}`; const now=Date.now();
+  const t={ id, content:'', dueDate:'', priority:'Medium', pos:(tabData[activeTab].todo.slice(-1)[0]?.pos||0)+1, upd:now, by:currentUserKey };
+  tabData[activeTab].todo.push(t); saveTabsToStorage(); renderBoard(); saveTabsToCloud();
+}
 
-/* members UI */
-function openMembers(){ document.getElementById('membersModal').classList.remove('hidden'); renderMembers(); }
-function closeMembers(){ document.getElementById('membersModal').classList.add('hidden'); }
-async function renderMembers(){
-  const list=document.getElementById('membersList');
-  list.innerHTML='<div class="py-6 text-sm text-gray-500">Loading…</div>';
-  const shares=await listShares(); list.innerHTML='';
-  shares.forEach(s=>{
-    const row=document.createElement('div'); row.className='flex items-center justify-between py-3';
-    const who=document.createElement('div'); who.className='flex items-center gap-3';
-    const bubble=document.createElement('div'); bubble.className='h-8 w-8 rounded-full bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xs font-semibold';
-    bubble.textContent=initials('', s.email||'');
-    const meta=document.createElement('div'); meta.innerHTML=`<div class="text-sm font-medium">${s.email||'—'}</div>`;
-    who.appendChild(bubble); who.appendChild(meta);
-
-    const actions=document.createElement('div'); actions.className='flex items-center gap-2';
-    if (s.role === 'owner') {
-      const tag=document.createElement('span'); tag.className='text-xs text-gray-500'; tag.textContent='owner';
-      actions.appendChild(tag);
-    } else if (currentRole==='owner' && s.id) {
-      const sel=document.createElement('select');
-      sel.className='text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800';
-      ['editor','viewer','owner'].forEach(r=>{ const o=document.createElement('option'); o.value=r; o.text=r; if(String(s.role||'editor')===r) o.selected=true; sel.appendChild(o); });
-      sel.onchange=async()=>{
-        if(sel.value==='owner'){
-          if(!confirm(`Transfer ownership to ${s.email}? You will lose owner privileges.`)){ sel.value=s.role||'editor'; return; }
-          const r=await transferOwner(s.email||''); if(!r.ok){ alert('Failed to transfer'); sel.value=s.role||'editor'; } else { alert('Ownership transferred'); closeMembers(); location.reload(); }
-          return;
-        }
-        const r=await patchShareRole(s.id,sel.value); if(!r.ok) alert('Failed to update role');
-      };
-      const del=document.createElement('button'); del.className='px-2 py-1 text-xs rounded bg-red-50 text-red-600 hover:bg-red-100'; del.textContent='Remove';
-      del.onclick=async()=>{ if(!confirm('Remove this member?')) return; const r=await removeShare(s.id); if(r.ok) renderMembers(); else alert('Failed to remove'); };
-      actions.appendChild(sel); actions.appendChild(del);
-    }
-    row.appendChild(who); row.appendChild(actions); list.appendChild(row);
+/*******************
+ *  PRESENCE (HTTP poll + heartbeats)
+ *******************/
+function renderPresence(){
+  const avatars = document.getElementById('presenceAvatars');
+  const count   = document.getElementById('presenceCount');
+  avatars.innerHTML = '';
+  const list = [...presence.values()];
+  // show others only; if any online, hide count; else show "0 online"
+  if (list.length === 0) { count.textContent = '0 online'; return; }
+  count.textContent = '';
+  const max=4;
+  list.slice(0,max).forEach(p=>{
+    const span=document.createElement('span');
+    span.className='avatar inline-flex items-center justify-center h-7 w-7 rounded-full bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 text-[11px] font-semibold ring-2 ring-white';
+    span.title=p.name||p.email; span.textContent=initials(p.name,p.email);
+    const dot=document.createElement('span'); dot.className='presence-dot'; span.appendChild(dot);
+    avatars.appendChild(span);
   });
+  if(list.length>max){
+    const extra=list.length-max; const more=document.createElement('span');
+    more.className='avatar inline-flex items-center justify-center h-7 w-7 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-[11px] font-semibold ring-2 ring-white';
+    more.textContent=`+${extra}`; avatars.appendChild(more);
+  }
+}
+async function presenceBeat(){
+  if(!sessionJWT || !WORKSPACE_ID) return;
+  await fetch(apiUrl('presence/beat'), {
+    method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}`, 'Content-Type':'application/json' },
+    body: JSON.stringify({ workspace_id: WORKSPACE_ID })
+  }).catch(()=>{});
+}
+async function presencePoll(){
+  if(!sessionJWT || !WORKSPACE_ID) return;
+  try{
+    const r = await fetch(apiUrl(`presence?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`), { headers:{ 'Authorization':`Bearer ${sessionJWT}` } });
+    if(!r.ok) return;
+    const j = await r.json(); const me = currentUserKey;
+    presence.clear();
+    (j.online||[]).filter(u=>u.id!==me).forEach(p=> presence.set(p.id,{ name:p.name, email:p.email }));
+    renderPresence();
+  }catch{}
 }
 
-/* wires */
-document.getElementById('addTabBtn').onclick=()=>{ if(currentRole==='viewer') return; const name=prompt('Enter tab name:'); if(!name||!name.trim()) return; const n=name.trim(); if(tabData[n]) return switchTab(n); tabData[n]={ todo:[], inprogress:[], done:[] }; renderTabs(); switchTab(n); pushTabs(); };
-document.getElementById('newTaskBtn').onclick=addNewTask;
-document.getElementById('clearBtn').onclick=clearAllTasks;
-document.getElementById('exportBtn').onclick=()=>{ const board=document.getElementById('board'); html2pdf().set({ margin:.5, filename:'Solara-Board.pdf', image:{type:'jpeg',quality:.98}, html2canvas:{scale:2}, jsPDF:{unit:'in', format:'letter', orientation:'landscape'} }).from(board).save(); };
-document.getElementById('manageBtn').onclick=()=>{ if(!WORKSPACE_ID) return alert('Open a workspace first.'); openMembers(); };
-document.getElementById('userButton').onclick=()=> document.getElementById('userMenu').classList.toggle('hidden');
-document.getElementById('addUserBtn').onclick=()=> openMembers();
-document.getElementById('signOutBtn').onclick=async()=>{ try{ if(sessionJWT){ await fetch(apiUrl('logout'), { method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}` } }).catch(()=>{}); } } finally { localStorage.removeItem('stytch_session_jwt'); localStorage.removeItem('solara_session_jwt'); location.replace('/sign-in.html'); } };
-document.getElementById('inviteBtn').onclick=async()=>{ const input=document.getElementById('inviteEmail'); const email=(input.value||'').trim().toLowerCase(); if(!email) return; const r=await invite(email); if(r.ok){ input.value=''; renderMembers(); alert('Invitation created.'); } else { alert('Invite failed.'); } };
-document.getElementById('presenceBtn').addEventListener('blur', ()=> document.getElementById('presenceTooltip').classList.add('hidden'));
+/*******************
+ *  NAV / EXPORT
+ *******************/
+function exportBoardAsPDF(){
+  const board=document.getElementById('board');
+  html2pdf().set({ margin:.5, filename:'Solara-Board.pdf', image:{type:'jpeg',quality:.98}, html2canvas:{scale:2}, jsPDF:{unit:'in', format:'letter', orientation:'landscape'} }).from(board).save();
+}
+function setReportsHref(){
+  const btn=document.getElementById('reportsLink');
+  if(btn){ btn.onclick=()=>{ if(!WORKSPACE_ID){ alert('Open a workspace first.'); return; } location.href=`reports.html?ws=${encodeURIComponent(WORKSPACE_ID)}`; }; }
+  const logo=document.getElementById('workspacesLink'); if(logo){ logo.href=`workspace.html`; }
+}
 
-/* boot */
-function setReportsHref(){ const btn=document.getElementById('reportsLink'); if(btn){ btn.onclick=()=>{ if(!WORKSPACE_ID){ alert('Open a workspace first.'); return; } location.href=`reports.html?ws=${encodeURIComponent(WORKSPACE_ID)}`; }; } const logo=document.getElementById('workspacesLink'); if(logo){ logo.href='workspace.html'; } }
-async function boot(){
-  const ok=await verifySessionAndHydrate(); if(!ok){ location.replace('/sign-in.html'); return; }
+/*******************
+ *  BOOT
+ *******************/
+function maybeAttachLastWorkspace(){
   const url=new URL(location.href);
-  WORKSPACE_ID=url.searchParams.get('ws') || localStorage.getItem('solara_last_ws') || '';
-  if(!WORKSPACE_ID){ document.getElementById('wsBanner').classList.remove('hidden'); } else { localStorage.setItem('solara_last_ws', WORKSPACE_ID); }
-  updateAuthUI(); setReportsHref();
-  currentRole=await fetchRole();
-
-  const wlist=await fetch(apiUrl('workspaces'),{ headers:{ 'Authorization':`Bearer ${sessionJWT}` }}).then(r=>r.ok?r.json():{workspaces:[]}).catch(()=>({workspaces:[]}));
-  WORKSPACE_NAME=(wlist.workspaces||[]).find(w=>w.id===WORKSPACE_ID)?.name || '';
-  document.getElementById('wsName').textContent=WORKSPACE_NAME||'—';
-
-  // initial load + stamp
-  tabData = migrateShapes(await fetchTabs());
-  if(Object.keys(tabData).length===0){ tabData['Click to edit']={ todo:[], inprogress:[], done:[] }; }
-  activeTab=Object.keys(tabData)[0]; renderTabs(); switchTab(activeTab); stampSync();
-
-  // presence heartbeat immediately
-  await httpBeatOnce();
-
-  connectLive(); // WS + fallbacks
+  if (url.searchParams.get('ws')) return;
+  const last=localStorage.getItem('solara_last_ws');
+  if (last){ url.searchParams.set('ws', last); history.replaceState(null,'',url.toString()); }
 }
-window.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible'){ httpBeatOnce(); } });
-window.addEventListener('beforeunload', ()=>{ httpBeatOnce(); });
-document.addEventListener('DOMContentLoaded', boot);
+window.addEventListener('pagehide', ()=>{ try{ saveTabsToStorage(); }catch{} });
+
+async function initialLoad(){
+  maybeAttachLastWorkspace();
+  const url=new URL(location.href);
+  WORKSPACE_ID = url.searchParams.get('ws') || '';
+  computeStorageNS();
+  if(!WORKSPACE_ID){ document.getElementById('wsBanner').classList.remove('hidden'); }
+
+  const ok = await verifySessionAndHydrate();
+  if(!ok) return requireReauth();
+
+  setReportsHref();
+
+  // Name in footer (from /workspaces list)
+  try{
+    const ws = await fetch(apiUrl('workspaces'), { headers:{ 'Authorization':`Bearer ${sessionJWT}` } }).then(r=>r.ok?r.json():{workspaces:[]});
+    WORKSPACE_NAME = (ws.workspaces||[]).find(w=>w.id===WORKSPACE_ID)?.name || '';
+    document.getElementById('footerWsName').textContent = WORKSPACE_NAME || 'Workspace';
+  }catch{}
+
+  // Local bootstrap
+  tabData = loadTabsFromStorage();
+  if(Object.keys(tabData).length===0){ const def='Click to edit'; tabData[def]={ todo:[],inprogress[],done:[] }; } // keep minimal fallback
+  if(!activeTab) activeTab = Object.keys(tabData)[0];
+  renderTabs(); switchTab(activeTab);
+
+  // Cloud bootstrap (also stamps "Last synced" via server updated_at)
+  const REM = await fetchCloudTabs();
+  if(REM){ BASE=clone(REM); tabData=mergeTabs({}, tabData, REM); saveTabsToStorage(); renderTabs(); switchTab(activeTab); }
+
+  // Start presence & sync timers
+  renderPresence();
+  await presenceBeat();
+  setInterval(presenceBeat, BEAT_MS);
+  setInterval(presencePoll, POLL_MS);
+  setInterval(async()=>{ // lightweight remote merge to stay fresh
+    const remote=await fetchCloudTabs(); if(remote){ const merged=mergeTabs(BASE, tabData, remote); if(JSON.stringify(merged)!==JSON.stringify(tabData)){ tabData=merged; BASE=clone(merged); saveTabsToStorage(); renderTabs(); switchTab(activeTab);} }
+  }, POLL_MS);
+
+  formatLastSynced();
+}
+
+document.addEventListener('DOMContentLoaded', initialLoad);
 </script>
 </body>
 </html>
