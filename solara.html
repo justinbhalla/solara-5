@@ -22,12 +22,10 @@
 </head>
 <body class="flex flex-col min-h-screen bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100">
 
-<!-- Workspace notice -->
 <div id="wsBanner" class="hidden bg-amber-50 text-amber-900 border-b border-amber-200 px-6 py-2 text-sm">
   No workspace selected. <a class="underline font-medium" href="workspace.html">Go to Workspaces</a>
 </div>
 
-<!-- Header -->
 <header class="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
   <div class="flex items-center gap-3">
     <a id="workspacesLink" href="workspace.html" class="w-9 h-9 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center hover:bg-indigo-600/20" title="Back to Workspaces">🔷</a>
@@ -38,7 +36,6 @@
   </div>
 
   <div class="flex items-center gap-4">
-    <!-- Presence -->
     <div class="relative">
       <button id="presenceBtn" class="flex -space-x-2 items-center">
         <span id="presenceAvatars" class="flex -space-x-2"></span>
@@ -50,7 +47,6 @@
       </div>
     </div>
 
-    <!-- User -->
     <div id="userArea" class="relative">
       <button id="userButton" class="flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
         <span id="avatar" class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-semibold">?</span>
@@ -69,7 +65,6 @@
   </div>
 </header>
 
-<!-- Nav -->
 <nav class="flex items-center justify-between px-6 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-medium">
   <div class="flex items-center gap-6">
     <button class="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-semibold">
@@ -89,7 +84,6 @@
   </div>
 </nav>
 
-<!-- Board -->
 <main class="p-6 flex-1 overflow-y-auto">
   <div id="board" class="grid grid-cols-1 md:grid-cols-3 gap-6">
     <div id="todo" class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg shadow-sm" data-col="todo">
@@ -104,7 +98,6 @@
   </div>
 </main>
 
-<!-- Footer: name left, copyright center, last synced right -->
 <div class="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 z-50">
   <div class="flex items-center justify-between px-6 py-3 overflow-x-auto">
     <div class="flex items-center gap-2 w-full overflow-x-auto px-1 py-1">
@@ -129,7 +122,6 @@
   </footer>
 </div>
 
-<!-- Members Modal -->
 <div id="membersModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center">
   <div class="absolute inset-0 bg-black/40" onclick="closeMembers()"></div>
   <div class="relative w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 shadow-xl">
@@ -148,11 +140,9 @@
 </div>
 
 <script>
-/* ---------------- CONFIG ---------------- */
 const API_BASE = "https://shy-smoke-ab8e.justinbhalla28.workers.dev";
 const apiUrl = p => API_BASE.replace(/\/+$/,'') + '/' + String(p||'').replace(/^\/+/,'');
 
-/* ---------------- STATE ---------------- */
 let WORKSPACE_ID = '';
 let WORKSPACE_NAME = '';
 let sessionJWT = null;
@@ -164,12 +154,13 @@ const COLS = ['todo','inprogress','done'];
 let activeTab = null;
 let tabData = {};
 let ws = null;
-let presence = new Map();           // userId -> {name,email}
-let typing = new Map();             // taskId -> Map<userId,{name,at}>
+let presence = new Map();
+let typing = new Map();
 let lastSyncedAt = null;
 
-/* ---------------- UTIL ---------------- */
 const debounce = (fn, ms=200)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
+const persistHTTP = debounce(()=> saveTabsHTTP(tabData).catch(()=>{}), 800);
+
 function getSessionJWT(){
   const m = document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : (localStorage.getItem('stytch_session_jwt') || localStorage.getItem('solara_session_jwt') || null);
@@ -180,7 +171,6 @@ function stampSync(){ lastSyncedAt = new Date(); document.getElementById('lastSy
 function displayNameFor(u){ const f=u?.name?.first_name, l=u?.name?.last_name, e=u?.email_addresses?.[0]?.email_address; return [f,l].filter(Boolean).join(' ') || e || 'User'; }
 function cryptoRandom(){ try{ return crypto.randomUUID(); }catch{ return Math.random().toString(36).slice(2); } }
 
-/* ---------------- AUTH ---------------- */
 async function verifySessionAndHydrate(){
   sessionJWT = getSessionJWT();
   if(!sessionJWT) return false;
@@ -205,7 +195,6 @@ function updateAuthUI(){
   document.getElementById('userEmail').textContent = email;
 }
 
-/* ---------------- MEMBERS / SHARES ---------------- */
 async function fetchRole(){ const r=await fetch(apiUrl(`workspaces/${encodeURIComponent(WORKSPACE_ID)}/role`), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}); if(!r.ok) return 'viewer'; const j=await r.json().catch(()=>({})); return j.role||'viewer'; }
 async function listShares(){ const r=await fetch(apiUrl(`shares?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}); if(!r.ok) return []; const j=await r.json().catch(()=>({shares:[]})); return j.shares||[]; }
 async function invite(email){ return fetch(apiUrl('shares'), { method:'POST', headers:{'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json'}, body: JSON.stringify({ workspace_id: WORKSPACE_ID, email }) }); }
@@ -213,30 +202,23 @@ async function patchShareRole(id, role){ return fetch(apiUrl(`shares/${id}`), { 
 async function removeShare(id){ return fetch(apiUrl(`shares/${id}`), { method:'DELETE', headers:{'Authorization':`Bearer ${sessionJWT}`}}); }
 async function transferOwner(toEmail){ return fetch(apiUrl(`workspaces/${encodeURIComponent(WORKSPACE_ID)}/transfer_owner`), { method:'POST', headers:{'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json'}, body: JSON.stringify({ to_email: toEmail }) }); }
 
-/* ---------------- HTTP TABS (bootstrap & fallback) ---------------- */
 async function fetchTabs(){ const r=await fetch(apiUrl(`tasks?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}); if(!r.ok) return {}; const j=await r.json().catch(()=>({tabs:{}})); return j.tabs||{}; }
 async function saveTabsHTTP(tabs){ await fetch(apiUrl('tasks'), { method:'POST', headers:{'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json'}, body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs }) }); }
 
-/* ---------------- LIVE WS ---------------- */
 function liveUrl(){ try{ const u=new URL(API_BASE); u.pathname=(u.pathname.replace(/\/+$/,'')+'/live').replace(/\/{2,}/g,'/'); u.search=`?ws=${encodeURIComponent(WORKSPACE_ID)}&token=${encodeURIComponent(sessionJWT)}`; u.protocol=u.protocol.replace('http','ws'); return u.toString(); }catch{ return null; } }
 function liveSend(obj){ if(ws && ws.readyState===1){ try{ ws.send(JSON.stringify({ ...obj, ws: WORKSPACE_ID })); }catch{} } }
 
 function connectLive(){
   const url = liveUrl(); if(!url) return;
   ws = new WebSocket(url);
-  ws.onopen = ()=>{};
-  ws.onclose = ()=>{};
-  ws.onerror = ()=>{};
   ws.onmessage = (ev)=>{
     let msg = {}; try{ msg=JSON.parse(ev.data||'{}'); }catch{}
     if(msg.type==='hello'){
       currentUserKey = msg.you?.user_id || currentUserKey;
-      // presence (others only)
       presence.clear();
       (msg.online||[]).forEach(p=> presence.set(p.id, { name:p.name, email:p.email }));
       renderPresence();
 
-      // snapshot (first paint only)
       tabData = migrateShapes(msg.tabs||{});
       if(Object.keys(tabData).length===0){ tabData['Click to edit']={ todo:[], inprogress:[], done:[] }; }
       if(!activeTab) activeTab = Object.keys(tabData)[0];
@@ -245,35 +227,28 @@ function connectLive(){
       return;
     }
 
-    // Incoming op (not from me)
     if(msg.type==='op' && msg.by !== currentUserKey && msg.ws===WORKSPACE_ID){
-      const applied = applyOpLocal(tabData, msg.op);
-      if (applied) applyOpDom(msg.op); // patch DOM surgically, no re-render
+      applyOpLocal(tabData, msg.op);  // ✅ local+DOM surgical patch
       stampSync();
       return;
     }
 
-    // Fallback snapshot (e.g., HTTP save) — do NOT disturb current editor if unchanged
     if(msg.type==='tabs:set' && msg.ws===WORKSPACE_ID){
-      // Merge conservatively to avoid jitter
       mergeSnapshotIntoLocal(msg.tabs||{});
       stampSync();
       return;
     }
 
-    // Typing signals
     if (msg.type === 'presence/typing' && msg.ws===WORKSPACE_ID) {
       registerTyping(msg.by, msg.taskId, msg.at, msg.name);
       return;
     }
 
-    // Presence
     if(msg.type==='presence/join'){ if(msg.by && msg.by!==currentUserKey){ presence.set(msg.by, { name:msg.name||'', email:msg.email||'' }); renderPresence(); } return; }
     if(msg.type==='presence/leave'){ presence.delete(msg.by); renderPresence(); return; }
   };
 }
 
-/* ---------------- Presence UI + typing ---------------- */
 function renderPresence(){
   const avatars=document.getElementById('presenceAvatars');
   const list=document.getElementById('presenceList');
@@ -305,10 +280,7 @@ function renderPresence(){
     more.textContent = `+${extra}`; avatars.appendChild(more);
   }
 }
-document.getElementById('presenceBtn').onclick = ()=>{
-  const t=document.getElementById('presenceTooltip');
-  t.classList.toggle('hidden');
-};
+document.getElementById('presenceBtn').onclick = ()=> document.getElementById('presenceTooltip').classList.toggle('hidden');
 
 function registerTyping(userId, taskId, at, name=''){
   if(!taskId || !userId || userId===currentUserKey) return;
@@ -329,7 +301,6 @@ function paintTyping(taskId){
   });
 }
 
-/* ---------------- Shapes + DOM renderer (surgical) ---------------- */
 function migrateShapes(data){
   const out=JSON.parse(JSON.stringify(data||{}));
   Object.keys(out).forEach(tab=>{
@@ -358,16 +329,13 @@ function renderTabs(){
     if(name===activeTab){ b.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'); }
     b.dataset.tab=name; b.textContent=name;
     b.onclick=()=>{ switchTab(name); };
-    b.ondblclick=()=>{ if(currentRole==='viewer') return; const nn=prompt('Rename tab:',name); const to=(nn||'').trim(); if(!to||to===name||tabData[to])return; // local
+    b.ondblclick=()=>{ if(currentRole==='viewer') return; const nn=prompt('Rename tab:',name); const to=(nn||'').trim(); if(!to||to===name||tabData[to])return;
       tabData[to]=tabData[name]; delete tabData[name]; if(activeTab===name) activeTab=to; renderTabs(); switchTab(activeTab);
-      // op
-      liveSend({ type:'op', op:{ kind:'tab/rename', from:name, to } });
-      stampSync();
+      liveSend({ type:'op', op:{ kind:'tab/rename', from:name, to } }); persistHTTP(); stampSync();
     };
     b.oncontextmenu=(e)=>{ e.preventDefault(); if(currentRole==='viewer')return; if(!confirm(`Delete tab "${name}"?`)) return;
       delete tabData[name]; if(activeTab===name) activeTab=Object.keys(tabData)[0]||null; renderTabs(); renderBoard();
-      liveSend({ type:'op', op:{ kind:'tab/delete', name } });
-      stampSync();
+      liveSend({ type:'op', op:{ kind:'tab/delete', name } }); persistHTTP(); stampSync();
     };
     node.appendChild(b);
   });
@@ -443,7 +411,6 @@ function createTaskCard(t, column){
   function togglePH(){ placeholder.style.display = editable.innerText.trim()===''?'block':'none'; }
   togglePH();
 
-  // Drag
   wrapper.addEventListener('dragstart', e=>{
     if(currentRole==='viewer'){ e.preventDefault(); return; }
     wrapper.classList.add('dragging'); e.dataTransfer.setData('text/plain', t.id);
@@ -451,37 +418,33 @@ function createTaskCard(t, column){
   });
   wrapper.addEventListener('dragend', ()=> wrapper.classList.remove('dragging'));
 
-  // Edits (no re-render; just local mutate + op)
   const sendTyping = debounce(()=> liveSend({ type:'presence/typing', taskId:t.id, tab:activeTab, name:displayNameFor(authedUser) }), 80);
   editable.addEventListener('input', ()=>{
     togglePH();
     const content = editable.innerText;
-    // local model
     patchTaskLocal(t.id, { content });
-    // op
     liveSend({ type:'op', op:{ kind:'task/patch', tab:activeTab, taskId:t.id, patch:{ content } } });
-    sendTyping();
-    stampSync();
+    persistHTTP(); stampSync(); sendTyping();
   });
   editable.addEventListener('focus', ()=> sendTyping());
   dateInput.addEventListener('change', ()=>{
     const dueDate = normalizeDateString(dateInput.value);
     patchTaskLocal(t.id, { dueDate });
     liveSend({ type:'op', op:{ kind:'task/patch', tab:activeTab, taskId:t.id, patch:{ dueDate } } });
-    stampSync();
+    persistHTTP(); stampSync();
   });
   prioritySelect.addEventListener('change', ()=>{
     const priority = prioritySelect.value || 'Medium';
     patchTaskLocal(t.id, { priority });
     liveSend({ type:'op', op:{ kind:'task/patch', tab:activeTab, taskId:t.id, patch:{ priority } } });
-    stampSync();
+    persistHTTP(); stampSync();
   });
   del.onclick = ()=>{
     if(currentRole==='viewer') return;
     if(!confirm('Delete this task?')) return;
     removeTaskLocal(t.id);
     liveSend({ type:'op', op:{ kind:'task/remove', tab:activeTab, taskId:t.id } });
-    stampSync();
+    persistHTTP(); stampSync();
   };
 
   wrapper.appendChild(editable); wrapper.appendChild(placeholder);
@@ -491,11 +454,9 @@ function createTaskCard(t, column){
   return wrapper;
 }
 
-/* ---- Local model helpers (no DOM repaint) ---- */
 function patchTaskLocal(taskId, patch){
-  const cols = COLS;
   const tab = tabData[activeTab]; if(!tab) return;
-  for (const c of cols) {
+  for (const c of COLS) {
     const list = tab[c] || [];
     const idx = list.findIndex(x=>x.id===taskId);
     if(idx!==-1){ list[idx] = { ...list[idx], ...patch, upd: Date.now(), by: currentUserKey }; return; }
@@ -513,7 +474,6 @@ function addTaskLocal(col){
   const id = `task-${cryptoRandom()}`; const now = Date.now();
   const t = { id, content:'', dueDate:'', priority:'Medium', pos: (tabData[activeTab][col].slice(-1)[0]?.pos||0)+1, upd:now, by:currentUserKey };
   tabData[activeTab][col].push(t);
-  // DOM add
   const colEl = document.getElementById(col);
   const card = createTaskCard(t, col);
   colEl.appendChild(card);
@@ -529,7 +489,6 @@ function moveTaskDomAndModel(taskId, fromCol, toCol, insertIndex, broadcast){
   moved.pos = newPosBetween(prev,next); moved.upd=Date.now(); moved.by=currentUserKey;
   target.splice(idx,0,moved);
 
-  // DOM move
   const card = document.querySelector(`[data-task-id="${taskId}"]`);
   const colEl = document.getElementById(toCol);
   const tasks = [...colEl.querySelectorAll('.card')];
@@ -539,17 +498,35 @@ function moveTaskDomAndModel(taskId, fromCol, toCol, insertIndex, broadcast){
 
   if (broadcast){
     liveSend({ type:'op', op:{ kind:'task/move', tab:activeTab, taskId, fromCol, toCol, insertIndex: idx } });
-    stampSync();
+    persistHTTP(); stampSync();
   }
 }
 
-/* ---- Apply incoming op to model ---- */
 function applyOpLocal(tabs, op){
   const k=op.kind;
-  if(k==='tab/create'){ if(!op.name||tabs[op.name]) return false; tabs[op.name]={todo:[],inprogress[],done:[]}; renderTabs(); return true; }
-  if(k==='tab/rename'){ const {from,to}=op; if(!from||!to||!tabs[from]||tabs[to]) return false; tabs[to]=tabs[from]; delete tabs[from]; if(activeTab===from) activeTab=to; renderTabs(); if(activeTab===to) switchTab(to); return true; }
-  if(k==='tab/delete'){ const {name}=op; if(!name||!tabs[name]) return false; delete tabs[name]; if(activeTab===name) { activeTab=Object.keys(tabs)[0]||null; renderTabs(); renderBoard(); } else { renderTabs(); } return true; }
-  if(k==='tab/clear'){ const {tab}=op; if(!tabs[tab]) tabs[tab]={todo:[],inprogress:[],done:[]}; else tabs[tab]={todo:[],inprogress:[],done:[]}; if(activeTab===tab) renderBoard(); return true; }
+  if(k==='tab/create'){
+    if(!op.name||tabs[op.name]) return false;
+    tabs[op.name]={todo:[], inprogress:[], done:[]}; // ✅ fixed colon
+    renderTabs();
+    return true;
+  }
+  if(k==='tab/rename'){
+    const {from,to}=op; if(!from||!to||!tabs[from]||tabs[to]) return false;
+    tabs[to]=tabs[from]; delete tabs[from];
+    if(activeTab===from) activeTab=to; renderTabs(); if(activeTab===to) switchTab(to);
+    return true;
+  }
+  if(k==='tab/delete'){
+    const {name}=op; if(!name||!tabs[name]) return false;
+    delete tabs[name];
+    if(activeTab===name) { activeTab=Object.keys(tabs)[0]||null; renderTabs(); renderBoard(); } else { renderTabs(); }
+    return true;
+  }
+  if(k==='tab/clear'){
+    const {tab}=op; if(!tabs[tab]) tabs[tab]={todo:[],inprogress:[],done:[]}; else tabs[tab]={todo:[],inprogress:[],done:[]};
+    if(activeTab===tab) renderBoard();
+    return true;
+  }
 
   if(k==='task/add'){
     const {tab,col,task}=op; if(!tabs[tab]) tabs[tab]={todo:[],inprogress:[],done:[]};
@@ -565,10 +542,8 @@ function applyOpLocal(tabs, op){
     if(activeTab===tab){
       const card=document.querySelector(`[data-task-id="${taskId}"]`);
       if(card){
-        if(document.activeElement && card.contains(document.activeElement)){
-          // Local user is editing — do not clobber text; show typing pill only
-          registerTyping('remote', taskId, Date.now(), 'Teammate');
-        } else {
+        const focused = document.activeElement && card.contains(document.activeElement);
+        if(!focused){
           if('content' in patch){ const e=card.querySelector('.editable'); if(e) e.innerText=patch.content||''; }
           if('dueDate' in patch){ const d=card.querySelector('input[type="date"]'); if(d) d.value=normalizeDateString(patch.dueDate)||''; }
           if('priority' in patch){ const s=card.querySelector('select'); if(s) s.value=patch.priority||'Medium'; }
@@ -603,43 +578,32 @@ function findTaskLocal(tabs, tab, id){
 }
 function newPosBetween(a,b){ const A=Number.isFinite(a)?+a:0; const B=Number.isFinite(b)?+b:A+2; return (B-A>1e-6)?A+(B-A)/2:A+0.000001; }
 
-/* ---- Snapshot merge (without disturbing focused editor) ---- */
 function mergeSnapshotIntoLocal(next){
   const curr = tabData;
-  // Add / remove tabs
   for(const k of Object.keys(next)) if(!curr[k]) curr[k]=next[k];
   for(const k of Object.keys(curr)) if(!(k in next)) delete curr[k];
-  // For each tab/col, do id-based merge
   for(const tab of Object.keys(curr)){
     for(const col of COLS){
       const mine = curr[tab]?.[col]||[];
       const theirs = (next[tab]?.[col])||[];
       const map = new Map(mine.map(t=>[t.id,t]));
-      // update/add
       for(const t of theirs){
         const ex = map.get(t.id);
         if(!ex){ mine.push(t); continue; }
-        // if this task is focused locally, skip content overwrite to avoid jitter
-        const isFocused = document.activeElement && document.querySelector(`[data-task-id="${t.id}"]`)?.contains(document.activeElement);
-        if(!isFocused){
-          ex.content = t.content;
-        }
+        const card=document.querySelector(`[data-task-id="${t.id}"]`);
+        const focused = card && document.activeElement && card.contains(document.activeElement);
+        if(!focused){ ex.content = t.content; }
         ex.dueDate = t.dueDate; ex.priority = t.priority; ex.pos = t.pos; ex.upd = t.upd; ex.by = t.by;
       }
-      // remove missing
       for(let i=mine.length-1;i>=0;i--){ if(!theirs.find(x=>x.id===mine[i].id)) mine.splice(i,1); }
-      // rerender column nodes if needed
       if(activeTab===tab){
         const colEl = document.getElementById(col);
-        // (light: skip full rerender to preserve focus)
-        // If lengths mismatch or order changed noticeably, rebuild that column quickly
         const idsNow=[...colEl.querySelectorAll('.card')].map(n=>n.getAttribute('data-task-id'));
         const idsTarget=[...mine].sort((a,b)=>a.pos-b.pos).map(t=>t.id);
         if(idsNow.join('|')!==idsTarget.join('|')){
           colEl.querySelectorAll('.card')?.forEach(n=>n.remove());
           mine.sort((a,b)=>a.pos-b.pos).forEach(t=> colEl.appendChild(createTaskCard(t,col)));
         } else {
-          // update fields for non-focused cards
           mine.forEach(t=>{
             const card=document.querySelector(`[data-task-id="${t.id}"]`);
             if(!card) return;
@@ -654,7 +618,6 @@ function mergeSnapshotIntoLocal(next){
   }
 }
 
-/* ---------------- Drag & precise drop ---------------- */
 const dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null };
 function clearDrag(){ dragContext.id=null; dragContext.fromCol=null; dragContext.overCol=null; dragContext.insertIndex=null; }
 function getAfter(container, y){
@@ -669,7 +632,6 @@ function computeInsertIndex(colEl, indicator){
   return siblings.length;
 }
 
-/* ---------------- Members UI ---------------- */
 function openMembers(){ document.getElementById('membersModal').classList.remove('hidden'); renderMembers(); }
 function closeMembers(){ document.getElementById('membersModal').classList.add('hidden'); }
 async function renderMembers(){
@@ -712,7 +674,6 @@ async function renderMembers(){
   });
 }
 
-/* ---------------- Controls & Boot ---------------- */
 document.getElementById('addTabBtn').onclick = ()=>{
   if(currentRole==='viewer') return;
   const name=(prompt('Enter tab name:')||'').trim();
@@ -720,25 +681,21 @@ document.getElementById('addTabBtn').onclick = ()=>{
   if(tabData[name]){ switchTab(name); return; }
   tabData[name] = { todo:[], inprogress:[], done:[] };
   renderTabs(); switchTab(name);
-  liveSend({ type:'op', op:{ kind:'tab/create', name } });
-  stampSync();
+  liveSend({ type:'op', op:{ kind:'tab/create', name } }); persistHTTP(); stampSync();
 };
 document.getElementById('newTaskBtn').onclick = ()=>{
   if(currentRole==='viewer') return;
   if(!activeTab){ const def='Click to edit'; tabData[def] = { todo:[], inprogress:[], done:[] }; activeTab=def; renderTabs(); switchTab(def); }
   const t = addTaskLocal('todo');
-  liveSend({ type:'op', op:{ kind:'task/add', tab:activeTab, col:'todo', task:t } });
-  stampSync();
+  liveSend({ type:'op', op:{ kind:'task/add', tab:activeTab, col:'todo', task:t } }); persistHTTP(); stampSync();
 };
 document.getElementById('clearBtn').onclick = ()=>{
   if(currentRole==='viewer') return;
   if(!activeTab) return;
   if(!confirm('Clear all tasks in this tab?')) return;
   tabData[activeTab] = { todo:[], inprogress:[], done:[] };
-  // fast DOM clear
   COLS.forEach(c=>{ const colEl=document.getElementById(c); colEl.querySelectorAll('.card').forEach(n=>n.remove()); });
-  liveSend({ type:'op', op:{ kind:'tab/clear', tab:activeTab } });
-  stampSync();
+  liveSend({ type:'op', op:{ kind:'tab/clear', tab:activeTab } }); persistHTTP(); stampSync();
 };
 document.getElementById('exportBtn').onclick = ()=>{
   const board=document.getElementById('board');
@@ -760,6 +717,20 @@ function setReportsHref(){
   const logo=document.getElementById('workspacesLink'); if(logo){ logo.href='workspace.html'; }
 }
 
+const dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null };
+function clearDrag(){ dragContext.id=null; dragContext.fromCol=null; dragContext.overCol=null; dragContext.insertIndex=null; }
+function getAfter(container, y){
+  const els=[...container.querySelectorAll('.card:not(.dragging)')];
+  return els.reduce((closest,child)=>{ const box=child.getBoundingClientRect(); const off=y-box.top-box.height/2; if(off<0 && off>closest.offset){ return {offset:off, element:child}; } else return closest; },{offset:-Infinity}).element;
+}
+function computeInsertIndex(colEl, indicator){
+  const siblings=[...colEl.querySelectorAll('.card')];
+  if(siblings.length===0) return 0;
+  const all=[...colEl.children]; let index=0;
+  for(let i=0;i<all.length;i++){ const el=all[i]; if(el===indicator){ index=[...all.slice(0,i)].filter(n=>n.classList && n.classList.contains('card')).length; return index; } }
+  return siblings.length;
+}
+
 async function boot(){
   const ok = await verifySessionAndHydrate();
   if(!ok){ location.replace('/sign-in.html'); return; }
@@ -772,22 +743,18 @@ async function boot(){
   updateAuthUI();
   setReportsHref();
 
-  // Role + Name
   currentRole = await fetchRole();
   const wlist = await fetch(apiUrl('workspaces'), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}).then(r=>r.ok?r.json():{workspaces:[]}).catch(()=>({workspaces:[]}));
   WORKSPACE_NAME = (wlist.workspaces||[]).find(w=>w.id===WORKSPACE_ID)?.name || '';
   document.getElementById('wsName').textContent = WORKSPACE_NAME || '—';
 
-  // HTTP bootstrap
   tabData = migrateShapes(await fetchTabs());
   if(Object.keys(tabData).length===0){ tabData['Click to edit']={ todo:[], inprogress:[], done:[] }; }
   activeTab = Object.keys(tabData)[0];
   renderTabs(); switchTab(activeTab);
 
-  // Live
   connectLive();
 
-  // Presence fallback heartbeat (in case WS is blocked)
   setInterval(()=>{ fetch(apiUrl('presence/beat'), { method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}`, 'Content-Type':'application/json' }, body: JSON.stringify({ workspace_id: WORKSPACE_ID }) }).catch(()=>{}); }, 30000);
 }
 document.addEventListener('DOMContentLoaded', boot);
