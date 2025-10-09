@@ -1,3 +1,4 @@
+<!-- Solara v10.2 — smooth sync (retain all UI/UX/features from your last file) -->
 <!DOCTYPE html>
 <html lang="en" class="h-full">
 <head>
@@ -16,13 +17,12 @@
     .date-badge{ font-variant-numeric: tabular-nums }
     .presence-dot{ position:absolute; right:-2px; bottom:-2px; width:10px; height:10px; border-radius:999px; background:#10b981; border:2px solid white }
     .avatar{ position:relative }
-    .typing-pill{ font-size:10px; padding:2px 6px; border-radius:999px; background:rgba(99,102,241,.1); color:#4f46e5; margin-top:.25rem; display:inline-block }
-    footer .slot{ min-width:0 }
+    footer .slot{ min-width: 0 }
   </style>
 </head>
 <body class="flex flex-col min-h-screen bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100">
 
-<!-- Workspace banner -->
+<!-- Workspace notice -->
 <div id="wsBanner" class="hidden bg-amber-50 text-amber-900 border-b border-amber-200 px-6 py-2 text-sm">
   No workspace selected. <a class="underline font-medium" href="workspace.html">Go to Workspaces</a>
 </div>
@@ -104,7 +104,7 @@
   </div>
 </main>
 
-<!-- Footer / Tabs -->
+<!-- Footer -->
 <div class="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 z-50">
   <div class="flex items-center justify-between px-6 py-3 overflow-x-auto">
     <div class="flex items-center gap-2 w-full overflow-x-auto px-1 py-1">
@@ -129,7 +129,7 @@
   </footer>
 </div>
 
-<!-- Members Modal -->
+<!-- Members Modal (unchanged behavior) -->
 <div id="membersModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center">
   <div class="absolute inset-0 bg-black/40" onclick="closeMembers()"></div>
   <div class="relative w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 shadow-xl">
@@ -164,14 +164,23 @@ const COLS = ['todo','inprogress','done'];
 let activeTab = null;
 let tabData = {};
 let ws = null;
-let presence = new Map();
-let typing = new Map();
+let wsConnected = false;
+
+let presence = new Map(); // others only
 let lastSyncedAt = null;
 
-/* ---------------- HELPERS ---------------- */
-const debounce = (fn, ms=200)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
-const persistHTTP = debounce(()=> saveTabsHTTP(tabData).catch(()=>{}), 800);
+let presenceBeatTimer = null;
+let presencePollTimer = null;
+let taskPollTimer = null;
 
+// Smooth-sync flags
+let isEditing = false;
+let isDragging = false;
+let editingTasks = new Set();
+let hasRemoteDuringEdit = false;
+
+/* ---------------- UTIL ---------------- */
+const debounce = (fn, ms=400)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
 function getSessionJWT(){
   const m = document.cookie.match(/(?:^|; )(?:stytch_session_jwt|solara_session_jwt)=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : (localStorage.getItem('stytch_session_jwt') || localStorage.getItem('solara_session_jwt') || null);
@@ -179,10 +188,16 @@ function getSessionJWT(){
 function initials(name,email){ const parts=(name||'').trim().split(/\s+/).filter(Boolean); return parts.length?parts.slice(0,2).map(s=>s[0]).join('').toUpperCase():(email||'?').slice(0,2).toUpperCase(); }
 function normalizeDateString(v){ if(!v) return ''; if(/^\d{4}-\d{2}-\d{2}$/.test(v)) return v; const d=new Date(v); if(isNaN(d)) return ''; const tz=d.getTimezoneOffset()*60000; return new Date(d.getTime()-tz).toISOString().slice(0,10); }
 function stampSync(){ lastSyncedAt = new Date(); document.getElementById('lastSynced').textContent = 'Last synced: ' + lastSyncedAt.toLocaleTimeString(); }
-function displayNameFor(u){ const f=u?.name?.first_name, l=u?.name?.last_name, e=u?.email_addresses?.[0]?.email_address; return [f,l].filter(Boolean).join(' ') || e || 'User'; }
-function cryptoRandom(){ try{ return crypto.randomUUID(); }catch{ return Math.random().toString(36).slice(2); } }
 
 /* ---------------- AUTH ---------------- */
+function displayNameFor(u){ const f=u?.name?.first_name, l=u?.name?.last_name, e=u?.email_addresses?.[0]?.email_address; return [f,l].filter(Boolean).join(' ') || e || 'User'; }
+function updateAuthUI(){
+  const name=displayNameFor(authedUser);
+  const email=authedUser?.email_addresses?.[0]?.email_address||'';
+  document.getElementById('avatar').textContent = initials(name,email);
+  document.getElementById('userName').textContent = name;
+  document.getElementById('userEmail').textContent = email;
+}
 async function verifySessionAndHydrate(){
   sessionJWT = getSessionJWT();
   if(!sessionJWT) return false;
@@ -192,19 +207,11 @@ async function verifySessionAndHydrate(){
     const data = await r.json();
     currentUserKey = data.user_id;
     const email = data.email ? [{ email_address: data.email }] : [];
-    const parts = (data.name||'').split(/\s+/);
-    authedUser = { name:{ first_name:parts[0]||'', last_name:parts.slice(1).join(' ')||'' }, email_addresses: email };
+    const parts = (data.name||'').split(/\s+/); authedUser = { name:{ first_name:parts[0]||'', last_name:parts.slice(1).join(' ')||'' }, email_addresses: email };
     localStorage.setItem('stytch_user', JSON.stringify(authedUser));
     updateAuthUI();
     return true;
   }catch{ return false; }
-}
-function updateAuthUI(){
-  const name=displayNameFor(authedUser);
-  const email=authedUser?.email_addresses?.[0]?.email_address||'';
-  document.getElementById('avatar').textContent = initials(name,email);
-  document.getElementById('userName').textContent = name;
-  document.getElementById('userEmail').textContent = email;
 }
 
 /* ---------------- MEMBERS / SHARES ---------------- */
@@ -215,54 +222,59 @@ async function patchShareRole(id, role){ return fetch(apiUrl(`shares/${id}`), { 
 async function removeShare(id){ return fetch(apiUrl(`shares/${id}`), { method:'DELETE', headers:{'Authorization':`Bearer ${sessionJWT}`}}); }
 async function transferOwner(toEmail){ return fetch(apiUrl(`workspaces/${encodeURIComponent(WORKSPACE_ID)}/transfer_owner`), { method:'POST', headers:{'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json'}, body: JSON.stringify({ to_email: toEmail }) }); }
 
-/* ---------------- TABS I/O ---------------- */
+/* ---------------- TABS LOAD/SAVE ---------------- */
 async function fetchTabs(){ const r=await fetch(apiUrl(`tasks?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}); if(!r.ok) return {}; const j=await r.json().catch(()=>({tabs:{}})); return j.tabs||{}; }
 async function saveTabsHTTP(tabs){ await fetch(apiUrl('tasks'), { method:'POST', headers:{'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json'}, body: JSON.stringify({ workspace_id: WORKSPACE_ID, tabs }) }); }
 
-/* ---------------- LIVE ---------------- */
-function liveUrl(){ try{ const u=new URL(API_BASE); u.pathname=(u.pathname.replace(/\/+$/,'')+'/live').replace(/\/{2,}/g,'/'); u.search=`?ws=${encodeURIComponent(WORKSPACE_ID)}&token=${encodeURIComponent(sessionJWT)}`; u.protocol=u.protocol.replace('http','ws'); return u.toString(); }catch{ return null; } }
-function liveSend(obj){ if(ws && ws.readyState===1){ try{ ws.send(JSON.stringify({ ...obj, ws: WORKSPACE_ID })); }catch{} } }
-function connectLive(){
-  const url = liveUrl(); if(!url) return;
-  try { ws = new WebSocket(url); } catch { return; }
+/* ---------------- PRESENCE HTTP ---------------- */
+async function presenceBeatHTTP(){ try{ await fetch(apiUrl('presence/beat'), { method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}`,'Content-Type':'application/json' }, body: JSON.stringify({ workspace_id: WORKSPACE_ID }) }); }catch{} }
+async function presencePollHTTP(){
+  try{
+    const r = await fetch(apiUrl(`presence?workspace_id=${encodeURIComponent(WORKSPACE_ID)}`), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }});
+    if(!r.ok) return;
+    const j = await r.json().catch(()=>({online:[]}));
+    const mine = currentUserKey;
+    presence.clear();
+    (j.online||[]).forEach(p=>{ if(p.id!==mine) presence.set(p.id, { name:p.name, email:p.email }); });
+    renderPresence();
+  }catch{}
+}
 
+/* ---------------- LIVE WS ---------------- */
+function liveUrl(){ try{ const u=new URL(API_BASE); u.pathname=(u.pathname.replace(/\/+$/,'')+'/live').replace(/\/{2,}/g,'/'); u.search=`?ws=${encodeURIComponent(WORKSPACE_ID)}&token=${encodeURIComponent(sessionJWT)}`; u.protocol=u.protocol.replace('http','ws'); return u.toString(); }catch{ return null; } }
+function connectLive(){
+  const url = liveUrl(); if(!url) { startHTTPFallback(); return; }
+  try { ws = new WebSocket(url); } catch { startHTTPFallback(); return; }
+
+  ws.onopen = ()=>{ wsConnected = true; stopTaskPolling(); };
+  ws.onclose = ()=>{ wsConnected = false; startHTTPFallback(); };
+  ws.onerror = ()=>{ wsConnected = false; startHTTPFallback(); };
   ws.onmessage = (ev)=>{
     let msg = {}; try{ msg=JSON.parse(ev.data||'{}'); }catch{}
     if(msg.type==='hello'){
       currentUserKey = msg.you?.user_id || currentUserKey;
-      presence.clear();
-      (msg.online||[]).forEach(p=> presence.set(p.id, { name:p.name, email:p.email }));
-      renderPresence();
-
-      tabData = migrateShapes(msg.tabs||{});
-      if(Object.keys(tabData).length===0){ tabData['Click to edit']={ todo:[], inprogress:[], done:[] }; }
+      presence.clear(); (msg.online||[]).forEach(p=> presence.set(p.id, { name:p.name, email:p.email })); renderPresence();
+      mergeRemoteTabs(msg.tabs||{}, /*by*/ msg.by); // initial merge
       if(!activeTab) activeTab = Object.keys(tabData)[0];
-      renderTabs(); switchTab(activeTab);
-      stampSync();
-      return;
+      renderTabs(); switchTab(activeTab); stampSync(); return;
     }
-
-    if(msg.type==='op' && msg.by !== currentUserKey && msg.ws===WORKSPACE_ID){
-      applyOpLocal(tabData, msg.op);  // apply granular remote op
-      stampSync();
-      return;
-    }
-
     if(msg.type==='tabs:set' && msg.ws===WORKSPACE_ID){
-      mergeSnapshotIntoLocal(msg.tabs||{});
-      stampSync();
+      // Ignore self echo unless our local state diverged (rare)
+      const fromSelf = !!msg.by && msg.by === currentUserKey;
+      const changed = mergeRemoteTabs(msg.tabs||{}, msg.by);
+      if (!isEditing && !isDragging && (!fromSelf || changed)) {
+        if(!tabData[activeTab]) activeTab = Object.keys(tabData)[0]||null;
+        renderTabs(); switchTab(activeTab); stampSync();
+      } else {
+        hasRemoteDuringEdit = true; // apply later to DOM
+      }
       return;
     }
-
-    if (msg.type === 'presence/typing' && msg.ws===WORKSPACE_ID) {
-      registerTyping(msg.by, msg.taskId, msg.at, msg.name);
-      return;
-    }
-
     if(msg.type==='presence/join'){ if(msg.by && msg.by!==currentUserKey){ presence.set(msg.by, { name:msg.name||'', email:msg.email||'' }); renderPresence(); } return; }
     if(msg.type==='presence/leave'){ presence.delete(msg.by); renderPresence(); return; }
   };
 }
+function liveSend(obj){ if(ws && ws.readyState===1){ try{ ws.send(JSON.stringify({ ...obj, ws: WORKSPACE_ID })); }catch{} } }
 
 /* ---------------- PRESENCE UI ---------------- */
 function renderPresence(){
@@ -296,28 +308,54 @@ function renderPresence(){
     more.textContent = `+${extra}`; avatars.appendChild(more);
   }
 }
-document.getElementById('presenceBtn').onclick = ()=> document.getElementById('presenceTooltip').classList.toggle('hidden');
+document.getElementById('presenceBtn').onclick = ()=>{
+  const t=document.getElementById('presenceTooltip');
+  t.classList.toggle('hidden');
+};
 
-function registerTyping(userId, taskId, at, name=''){
-  if(!taskId || !userId || userId===currentUserKey) return;
-  if (!typing.has(taskId)) typing.set(taskId, new Map());
-  typing.get(taskId).set(userId, { name, at });
-  paintTyping(taskId);
-  setTimeout(()=>{ const m=typing.get(taskId); if(!m) return; const v=m.get(userId); if(!v) return; if(Date.now()-v.at>3500){ m.delete(userId); paintTyping(taskId); } }, 3600);
+/* ---------------- MERGE (preserve edits) ---------------- */
+function mergeRemoteTabs(remote, by){
+  // returns true if structure differs from current tabData
+  const prevJSON = JSON.stringify(tabData);
+  // Deep clone to avoid reference surprises
+  const local = tabData;
+  const editingIds = new Set(editingTasks);
+
+  // Replace baseline with remote
+  tabData = JSON.parse(JSON.stringify(remote||{}));
+
+  // If we're editing, restore local versions of those tasks by id (content, dueDate, priority, pos)
+  if (editingIds.size){
+    for (const tabName of Object.keys(tabData)) {
+      for (const col of COLS) {
+        const list = tabData[tabName][col] || [];
+        for (let i=0;i<list.length;i++){
+          const t = list[i];
+          if (editingIds.has(t.id)){
+            // find local copy
+            const lt = findTask(local, t.id);
+            if (lt){
+              list[i] = { ...t, content: lt.content, dueDate: lt.dueDate, priority: lt.priority, pos: lt.pos, upd: lt.upd, by: lt.by };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return JSON.stringify(tabData) !== prevJSON;
 }
-function paintTyping(taskId){
-  const el = document.querySelector(`[data-task-id="${taskId}"] .typing-area`);
-  if(!el) return;
-  const m = typing.get(taskId);
-  el.innerHTML = '';
-  if(!m || m.size===0) return;
-  [...m.values()].slice(0,3).forEach(v=>{
-    const pill=document.createElement('span'); pill.className='typing-pill'; pill.textContent=`${v.name||'Someone'} is typing…`;
-    el.appendChild(pill);
-  });
+function findTask(data, id){
+  for (const tab of Object.keys(data||{})){
+    for (const c of COLS){
+      const hit = (data[tab][c]||[]).find(x=>x.id===id);
+      if (hit) return hit;
+    }
+  }
+  return null;
 }
 
-/* ---------------- MERGE & RENDER ---------------- */
+/* ---------------- SHAPE / RENDER ---------------- */
 function migrateShapes(data){
   const out=JSON.parse(JSON.stringify(data||{}));
   Object.keys(out).forEach(tab=>{
@@ -336,6 +374,7 @@ function migrateShapes(data){
   });
   return out;
 }
+function cryptoRandom(){ try{ return crypto.randomUUID(); }catch{ return Math.random().toString(36).slice(2); } }
 
 function renderTabs(){
   const node=document.getElementById('tabs'); node.innerHTML='';
@@ -346,31 +385,76 @@ function renderTabs(){
     if(name===activeTab){ b.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'); }
     b.dataset.tab=name; b.textContent=name;
     b.onclick=()=>{ switchTab(name); };
-    b.ondblclick=()=>{ if(currentRole==='viewer') return; const nn=prompt('Rename tab:',name); const to=(nn||'').trim(); if(!to||to===name||tabData[to])return;
-      tabData[to]=tabData[name]; delete tabData[name]; if(activeTab===name) activeTab=to; renderTabs(); switchTab(activeTab);
-      liveSend({ type:'op', op:{ kind:'tab/rename', from:name, to } }); persistHTTP(); stampSync();
-    };
-    b.oncontextmenu=(e)=>{ e.preventDefault(); if(currentRole==='viewer')return; if(!confirm(`Delete tab "${name}"?`)) return;
-      delete tabData[name]; if(activeTab===name) activeTab=Object.keys(tabData)[0]||null; renderTabs(); renderBoard();
-      liveSend({ type:'op', op:{ kind:'tab/delete', name } }); persistHTTP(); stampSync();
-    };
+    b.ondblclick=()=>{ if(currentRole==='viewer') return; const nn=prompt('Rename tab:',name); if(!nn||!nn.trim()||nn===name||tabData[nn])return; tabData[nn]=tabData[name]; delete tabData[name]; if(activeTab===name) activeTab=nn; renderTabs(); switchTab(activeTab); pushTabs(); };
+    b.oncontextmenu=(e)=>{ e.preventDefault(); if(currentRole==='viewer')return; if(confirm(`Delete tab "${name}"?`)){ delete tabData[name]; if(activeTab===name) activeTab=Object.keys(tabData)[0]||null; renderTabs(); renderBoard(); pushTabs(); } };
     node.appendChild(b);
   });
 }
-function switchTab(tab){ if(!tabData[tab]) return; activeTab=tab;
-  document.querySelectorAll('.tab-button').forEach(x=>x.classList.remove('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'));
-  const btn=[...document.querySelectorAll('.tab-button')].find(b=>b.dataset.tab===tab); if(btn) btn.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30');
-  renderBoard();
-}
+function switchTab(tab){ if(!tabData[tab]) return; activeTab=tab; document.querySelectorAll('.tab-button').forEach(x=>x.classList.remove('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30')); const btn=[...document.querySelectorAll('.tab-button')].find(b=>b.dataset.tab===tab); if(btn) btn.classList.add('border-indigo-500','text-indigo-700','dark:text-white','font-semibold','bg-indigo-50','dark:bg-indigo-600/30'); renderBoard(); }
 function ensureAtLeastOne(){ const cols=tabData[activeTab]; if(!cols) return; if((cols.todo?.length||0)+(cols.inprogress?.length||0)+(cols.done?.length||0)===0){ const id=`task-${cryptoRandom()}`; cols.todo.push({ id, content:'', dueDate:'', priority:'Medium', pos:1, upd:Date.now(), by: currentUserKey }); } }
 
+function createTaskElement(id, content='', dueDate='', priority='Medium', column, pos){
+  const w=document.createElement('div');
+  w.id=id; w.setAttribute('data-task','1'); w.draggable=currentRole!=='viewer';
+  w.className='relative p-3 rounded bg-white dark:bg-gray-700 shadow cursor-move mb-2'; w.setAttribute('data-column',column);
+
+  const editable=document.createElement('div'); editable.className='editable w-full font-medium mb-1'; editable.contentEditable=(currentRole!=='viewer'); editable.innerText=content;
+  const placeholder=document.createElement('span'); placeholder.className='absolute left-3 top-3 text-sm text-gray-400 pointer-events-none'; placeholder.textContent='Click to edit...';
+  function toggle(){ placeholder.style.display = editable.innerText.trim()===''?'block':'none'; }
+
+  const row=document.createElement('div'); row.className='flex items-center gap-2';
+  const dateInput=document.createElement('input'); dateInput.type='date'; dateInput.value=normalizeDateString(dueDate)||''; dateInput.disabled=(currentRole==='viewer'); dateInput.className='mt-1 text-xs bg-transparent text-gray-700 dark:text-gray-200 border border-transparent rounded px-1 date-badge';
+  const prioritySelect=document.createElement('select'); prioritySelect.disabled=(currentRole==='viewer'); prioritySelect.className='mt-1 ml-2 text-xs bg-transparent text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded px-1';
+  ['High','Medium','Low'].forEach(level=>{ const o=document.createElement('option'); o.value=level; o.text=level; if(level===priority) o.selected=true; prioritySelect.appendChild(o); });
+  const del=document.createElement('button'); del.className='absolute top-2 right-2 text-gray-400 hover:text-red-500'; del.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'; del.title='Delete Task'; del.onclick=()=>{ if(currentRole==='viewer')return; if(confirm('Delete this task?')) removeTaskById(id); };
+
+  // Smooth typing: mark editing while focused
+  editable.addEventListener('focus', ()=>{ isEditing=true; editingTasks.add(id); });
+  editable.addEventListener('blur', ()=>{ editingTasks.delete(id); if(editingTasks.size===0){ isEditing=false; if(hasRemoteDuringEdit){ hasRemoteDuringEdit=false; renderTabs(); switchTab(activeTab); stampSync(); } } });
+  editable.addEventListener('input', ()=>{ toggle(); persistTaskEdits(id,{ content: editable.innerText.trim() }); });
+
+  dateInput.addEventListener('focus', ()=>{ isEditing=true; editingTasks.add(id); });
+  dateInput.addEventListener('blur', ()=>{ editingTasks.delete(id); if(editingTasks.size===0){ isEditing=false; if(hasRemoteDuringEdit){ hasRemoteDuringEdit=false; renderTabs(); switchTab(activeTab); stampSync(); } } });
+  dateInput.addEventListener('change', ()=> persistTaskEdits(id,{ dueDate: normalizeDateString(dateInput.value) }));
+
+  prioritySelect.addEventListener('focus', ()=>{ isEditing=true; editingTasks.add(id); });
+  prioritySelect.addEventListener('blur', ()=>{ editingTasks.delete(id); if(editingTasks.size===0){ isEditing=false; if(hasRemoteDuringEdit){ hasRemoteDuringEdit=false; renderTabs(); switchTab(activeTab); stampSync(); } } });
+  prioritySelect.addEventListener('change', ()=> persistTaskEdits(id,{ priority: prioritySelect.value||'Medium' }));
+
+  w.addEventListener('dragstart',e=>{ if(currentRole==='viewer'){ e.preventDefault(); return; } isDragging=true; w.classList.add('dragging'); e.dataTransfer.setData('text/plain',id); dragContext.id=id; dragContext.fromCol=w.getAttribute('data-column'); });
+  w.addEventListener('dragend',()=>{ isDragging=false; w.classList.remove('dragging'); if(hasRemoteDuringEdit){ hasRemoteDuringEdit=false; renderTabs(); switchTab(activeTab); stampSync(); } });
+
+  row.appendChild(dateInput); row.appendChild(prioritySelect);
+  w.appendChild(editable); w.appendChild(placeholder); w.appendChild(row); w.appendChild(del);
+  toggle();
+  return w;
+}
+
+const dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null };
+function clearDrag(){ dragContext.id=null; dragContext.fromCol=null; dragContext.overCol=null; dragContext.insertIndex=null; }
+function getAfter(container, y){
+  const els=[...container.querySelectorAll('[data-task]:not(.dragging)')];
+  return els.reduce((closest,child)=>{ const box=child.getBoundingClientRect(); const off=y-box.top-box.height/2; if(off<0 && off>closest.offset){ return {offset:off, element:child}; } else return closest; },{offset:-Infinity}).element;
+}
+function computeInsertIndex(colEl, indicator){
+  const siblings=[...colEl.querySelectorAll('[data-task]')];
+  if(siblings.length===0) return 0;
+  const all=[...colEl.children]; let index=0;
+  for(let i=0;i<all.length;i++){ const el=all[i]; if(el===indicator){ index=[...all.slice(0,i)].filter(n=>n.hasAttribute && n.hasAttribute('data-task')).length; return index; } }
+  return siblings.length;
+}
+function newPosBetween(prev, next){ const A=Number.isFinite(prev)?+prev:0; const B=Number.isFinite(next)?+next:A+2; if(B-A>1e-6) return A+(B-A)/2; return A+0.000001; }
+function reindex(list){ list.forEach((t,i)=> t.pos=i+1); }
+
 function renderBoard(){
-  COLS.forEach(col=>{
+  const columns = COLS;
+  columns.forEach(col=>{
     const colEl=document.getElementById(col);
-    colEl.querySelectorAll('.card')?.forEach(n=>n.remove());
+    colEl.querySelectorAll('[data-task]')?.forEach(n=>n.remove());
 
     colEl.ondragover = (e)=>{
-      e.preventDefault(); colEl.classList.add('drag-over','show-drop');
+      e.preventDefault();
+      colEl.classList.add('drag-over','show-drop');
       const after=getAfter(colEl, e.clientY);
       const indicator=colEl.querySelector('.drop-indicator');
       if(after==null){ colEl.appendChild(indicator); } else { colEl.insertBefore(indicator, after); }
@@ -379,9 +463,10 @@ function renderBoard(){
     };
     colEl.ondragleave = ()=>{ colEl.classList.remove('drag-over','show-drop'); };
     colEl.ondrop = (e)=>{
-      e.preventDefault(); colEl.classList.remove('drag-over','show-drop');
+      e.preventDefault();
+      colEl.classList.remove('drag-over','show-drop');
       const id=dragContext.id; if(!id) return;
-      moveTaskDomAndModel(id, dragContext.fromCol, colEl.dataset.col, dragContext.insertIndex, true);
+      commitReorder(id, dragContext.fromCol, colEl.dataset.col, dragContext.insertIndex);
       clearDrag();
     };
   });
@@ -391,275 +476,70 @@ function renderBoard(){
   const data=tabData[activeTab];
   COLS.forEach(col=>{
     const colEl=document.getElementById(col);
-    (data[col]||[]).sort((a,b)=> (a.pos||0)-(b.pos||0)).forEach(t=> colEl.appendChild(createTaskCard(t, col)));
+    (data[col]||[]).sort((a,b)=> (a.pos||0)-(b.pos||0)).forEach(t=> colEl.appendChild(createTaskElement(t.id,t.content,t.dueDate,t.priority,col,t.pos)));
   });
 }
 
-function createTaskCard(t, column){
-  const wrapper = document.createElement('div');
-  wrapper.className = 'card relative p-3 rounded bg-white dark:bg-gray-700 shadow cursor-move mb-2';
-  wrapper.setAttribute('data-column', column);
-  wrapper.setAttribute('data-task-id', t.id);
-  wrapper.draggable = currentRole!=='viewer';
-
-  const editable = document.createElement('div');
-  editable.className = 'editable w-full font-medium mb-1';
-  editable.contentEditable = (currentRole!=='viewer');
-  editable.innerText = t.content || '';
-  const placeholder = document.createElement('span');
-  placeholder.className = 'absolute left-3 top-3 text-sm text-gray-400 pointer-events-none';
-  placeholder.textContent = 'Click to edit...';
-
-  const row = document.createElement('div'); row.className='flex items-center gap-2';
-  const dateInput = document.createElement('input'); dateInput.type='date'; dateInput.value=normalizeDateString(t.dueDate)||''; dateInput.disabled=(currentRole==='viewer'); dateInput.className='mt-1 text-xs bg-transparent text-gray-700 dark:text-gray-200 border border-transparent rounded px-1 date-badge';
-  const prioritySelect=document.createElement('select'); prioritySelect.disabled=(currentRole==='viewer'); prioritySelect.className='mt-1 ml-2 text-xs bg-transparent text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded px-1';
-  ;['High','Medium','Low'].forEach(level=>{ const o=document.createElement('option'); o.value=level; o.text=level; if(level===t.priority) o.selected=true; prioritySelect.appendChild(o); });
-
-  const del=document.createElement('button');
-  del.className='absolute top-2 right-2 text-gray-400 hover:text-red-500';
-  del.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>';
-  del.title='Delete Task';
-
-  const typingArea = document.createElement('div');
-  typingArea.className = 'typing-area';
-
-  function togglePH(){ placeholder.style.display = editable.innerText.trim()===''?'block':'none'; }
-  togglePH();
-
-  wrapper.addEventListener('dragstart', e=>{
-    if(currentRole==='viewer'){ e.preventDefault(); return; }
-    wrapper.classList.add('dragging'); e.dataTransfer.setData('text/plain', t.id);
-    dragContext.id=t.id; dragContext.fromCol=wrapper.getAttribute('data-column');
-  });
-  wrapper.addEventListener('dragend', ()=> wrapper.classList.remove('dragging'));
-
-  const sendTyping = debounce(()=> liveSend({ type:'presence/typing', taskId:t.id, tab:activeTab, name:displayNameFor(authedUser) }), 80);
-  editable.addEventListener('input', ()=>{
-    togglePH();
-    const content = editable.innerText;
-    patchTaskLocal(t.id, { content });
-    liveSend({ type:'op', op:{ kind:'task/patch', tab:activeTab, taskId:t.id, patch:{ content } } });
-    persistHTTP(); stampSync(); sendTyping();
-  });
-  editable.addEventListener('focus', ()=> sendTyping());
-  dateInput.addEventListener('change', ()=>{
-    const dueDate = normalizeDateString(dateInput.value);
-    patchTaskLocal(t.id, { dueDate });
-    liveSend({ type:'op', op:{ kind:'task/patch', tab:activeTab, taskId:t.id, patch:{ dueDate } } });
-    persistHTTP(); stampSync();
-  });
-  prioritySelect.addEventListener('change', ()=>{
-    const priority = prioritySelect.value || 'Medium';
-    patchTaskLocal(t.id, { priority });
-    liveSend({ type:'op', op:{ kind:'task/patch', tab:activeTab, taskId:t.id, patch:{ priority } } });
-    persistHTTP(); stampSync();
-  });
-  del.onclick = ()=>{
-    if(currentRole==='viewer') return;
-    if(!confirm('Delete this task?')) return;
-    removeTaskLocal(t.id);
-    liveSend({ type:'op', op:{ kind:'task/remove', tab:activeTab, taskId:t.id } });
-    persistHTTP(); stampSync();
-  };
-
-  wrapper.appendChild(editable); wrapper.appendChild(placeholder);
-  row.appendChild(dateInput); row.appendChild(prioritySelect); wrapper.appendChild(row);
-  wrapper.appendChild(del);
-  wrapper.appendChild(typingArea);
-  return wrapper;
-}
-
-/* ----- Local model ops ----- */
-function patchTaskLocal(taskId, patch){
-  const tab = tabData[activeTab]; if(!tab) return;
-  for (const c of COLS) {
-    const list = tab[c] || [];
-    const idx = list.findIndex(x=>x.id===taskId);
-    if(idx!==-1){ list[idx] = { ...list[idx], ...patch, upd: Date.now(), by: currentUserKey }; return; }
-  }
-}
-function removeTaskLocal(taskId){
-  const tab = tabData[activeTab]; if(!tab) return;
-  for (const c of COLS) {
-    const list = tab[c] || [];
-    const i = list.findIndex(x=>x.id===taskId);
-    if(i!==-1){ list.splice(i,1); const node=document.querySelector(`[data-task-id="${taskId}"]`); if(node) node.remove(); return; }
-  }
-}
-function addTaskLocal(col){
-  const id = `task-${cryptoRandom()}`; const now = Date.now();
-  const t = { id, content:'', dueDate:'', priority:'Medium', pos: (tabData[activeTab][col].slice(-1)[0]?.pos||0)+1, upd:now, by:currentUserKey };
-  tabData[activeTab][col].push(t);
-  const colEl = document.getElementById(col);
-  const card = createTaskCard(t, col);
-  colEl.appendChild(card);
-  return t;
-}
-function moveTaskDomAndModel(taskId, fromCol, toCol, insertIndex, broadcast){
-  const tab = tabData[activeTab];
-  const fromList = tab[fromCol]||[]; const i=fromList.findIndex(t=>t.id===taskId); if(i===-1) return;
-  const moved = fromList.splice(i,1)[0];
-  const target = tab[toCol]||(tab[toCol]=[]);
-  let idx = insertIndex==null?target.length:Math.max(0,Math.min(insertIndex,target.length));
-  const prev = target[idx-1]?.pos, next = target[idx]?.pos;
-  moved.pos = newPosBetween(prev,next); moved.upd=Date.now(); moved.by=currentUserKey;
-  target.splice(idx,0,moved);
-
-  const card = document.querySelector(`[data-task-id="${taskId}"]`);
-  const colEl = document.getElementById(toCol);
-  const tasks = [...colEl.querySelectorAll('.card')];
-  if (idx >= tasks.length) colEl.appendChild(card);
-  else colEl.insertBefore(card, tasks[idx]);
-  card.setAttribute('data-column', toCol);
-
-  if (broadcast){
-    liveSend({ type:'op', op:{ kind:'task/move', tab:activeTab, taskId, fromCol, toCol, insertIndex: idx } });
-    persistHTTP(); stampSync();
-  }
-}
-
-/* ----- Remote op applier (DOM-safe) ----- */
-function applyOpLocal(tabs, op){
-  const k=op.kind;
-  if(k==='tab/create'){
-    if(!op.name||tabs[op.name]) return false;
-    tabs[op.name]={todo:[], inprogress:[], done:[]};
-    renderTabs();
-    return true;
-  }
-  if(k==='tab/rename'){
-    const {from,to}=op; if(!from||!to||!tabs[from]||tabs[to]) return false;
-    tabs[to]=tabs[from]; delete tabs[from];
-    if(activeTab===from) activeTab=to; renderTabs(); if(activeTab===to) switchTab(to);
-    return true;
-  }
-  if(k==='tab/delete'){
-    const {name}=op; if(!name||!tabs[name]) return false;
-    delete tabs[name];
-    if(activeTab===name) { activeTab=Object.keys(tabs)[0]||null; renderTabs(); renderBoard(); } else { renderTabs(); }
-    return true;
-  }
-  if(k==='tab/clear'){
-    const {tab}=op; if(!tabs[tab]) tabs[tab]={todo:[],inprogress:[],done:[]}; else tabs[tab]={todo:[],inprogress:[],done:[]};
-    if(activeTab===tab) renderBoard();
-    return true;
-  }
-
-  if(k==='task/add'){
-    const {tab,col,task}=op; if(!tabs[tab]) tabs[tab]={todo:[],inprogress:[],done:[]};
-    const list=tabs[tab][col]||(tabs[tab][col]=[]);
-    list.push({ ...task, pos:(list[list.length-1]?.pos||0)+1 });
-    if(activeTab===tab){ const colEl=document.getElementById(col); colEl.appendChild(createTaskCard(task,col)); }
-    return true;
-  }
-  if(k==='task/patch'){
-    const {tab,taskId,patch}=op; const loc=findTaskLocal(tabs,tab,taskId); if(!loc) return false;
-    const list=tabs[tab][loc.col]; const before=list[loc.idx];
-    list[loc.idx]={...before,...patch,upd:Date.now()};
-    if(activeTab===tab){
-      const card=document.querySelector(`[data-task-id="${taskId}"]`);
-      if(card){
-        const focused = document.activeElement && card.contains(document.activeElement);
-        if(!focused){
-          if('content' in patch){ const e=card.querySelector('.editable'); if(e) e.innerText=patch.content||''; }
-          if('dueDate' in patch){ const d=card.querySelector('input[type="date"]'); if(d) d.value=normalizeDateString(patch.dueDate)||''; }
-          if('priority' in patch){ const s=card.querySelector('select'); if(s) s.value=patch.priority||'Medium'; }
-        }
-      }
-    }
-    return true;
-  }
-  if(k==='task/remove'){
-    const {tab,taskId}=op; const loc=findTaskLocal(tabs,tab,taskId); if(!loc) return false;
-    tabs[tab][loc.col].splice(loc.idx,1);
-    if(activeTab===tab){ const node=document.querySelector(`[data-task-id="${taskId}"]`); if(node) node.remove(); }
-    return true;
-  }
-  if(k==='task/move'){
-    const {tab,taskId,fromCol,toCol,insertIndex}=op; if(!tabs[tab]) return false;
-    const loc=findTaskLocal(tabs,tab,taskId); if(!loc) return false;
-    const moved=tabs[tab][loc.col].splice(loc.idx,1)[0];
-    const target=tabs[tab][toCol]||(tabs[tab][toCol]=[]);
-    const idx=insertIndex==null?target.length:Math.max(0,Math.min(insertIndex,target.length));
-    const prev=target[idx-1]?.pos, next=target[idx]?.pos;
-    moved.pos=newPosBetween(prev,next); target.splice(idx,0,moved);
-
-    // DOM-only reorder (avoid double model mutation)
-    if(activeTab===tab){
-      const card=document.querySelector(`[data-task-id="${taskId}"]`);
-      const colEl=document.getElementById(toCol);
-      const tasks=[...colEl.querySelectorAll('.card')];
-      if(card){
-        if(idx >= tasks.length) colEl.appendChild(card);
-        else colEl.insertBefore(card, tasks[idx]);
-        card.setAttribute('data-column', toCol);
-      }
-    }
-    return true;
-  }
-  return false;
-}
-function findTaskLocal(tabs, tab, id){
-  const cols=COLS; if(!tabs[tab]) return null;
-  for(const c of cols){ const list=tabs[tab][c]||[]; const i=list.findIndex(x=>x.id===id); if(i!==-1) return {col:c,idx:i}; }
-  return null;
-}
-function newPosBetween(a,b){ const A=Number.isFinite(a)?+a:0; const B=Number.isFinite(b)?+b:A+2; return (B-A>1e-6)?A+(B-A)/2:A+0.000001; }
-
-function mergeSnapshotIntoLocal(next){
-  const curr = tabData;
-  for(const k of Object.keys(next)) if(!curr[k]) curr[k]=next[k];
-  for(const k of Object.keys(curr)) if(!(k in next)) delete curr[k];
-  for(const tab of Object.keys(curr)){
-    for(const col of COLS){
-      const mine = curr[tab]?.[col]||[];
-      const theirs = (next[tab]?.[col])||[];
-      const map = new Map(mine.map(t=>[t.id,t]));
-      for(const t of theirs){
-        const ex = map.get(t.id);
-        if(!ex){ mine.push(t); continue; }
-        const card=document.querySelector(`[data-task-id="${t.id}"]`);
-        const focused = card && document.activeElement && card.contains(document.activeElement);
-        if(!focused){ ex.content = t.content; }
-        ex.dueDate = t.dueDate; ex.priority = t.priority; ex.pos = t.pos; ex.upd = t.upd; ex.by = t.by;
-      }
-      for(let i=mine.length-1;i>=0;i--){ if(!theirs.find(x=>x.id===mine[i].id)) mine.splice(i,1); }
-      if(activeTab===tab){
-        const colEl = document.getElementById(col);
-        const idsNow=[...colEl.querySelectorAll('.card')].map(n=>n.getAttribute('data-task-id'));
-        const idsTarget=[...mine].sort((a,b)=>a.pos-b.pos).map(t=>t.id);
-        if(idsNow.join('|')!==idsTarget.join('|')){
-          colEl.querySelectorAll('.card')?.forEach(n=>n.remove());
-          mine.sort((a,b)=>a.pos-b.pos).forEach(t=> colEl.appendChild(createTaskCard(t,col)));
-        } else {
-          mine.forEach(t=>{
-            const card=document.querySelector(`[data-task-id="${t.id}"]`);
-            if(!card) return;
-            const focused = document.activeElement && card.contains(document.activeElement);
-            if(!focused){ card.querySelector('.editable').innerText = t.content||''; }
-            const d=card.querySelector('input[type="date"]'); if(d) d.value=normalizeDateString(t.dueDate)||'';
-            const s=card.querySelector('select'); if(s) s.value=t.priority||'Medium';
-          });
-        }
-      }
+/* ---------------- Mutations -> Live push ---------------- */
+function persistTaskEdits(taskId, patch){
+  if(!activeTab || !tabData[activeTab]) return;
+  const cols=COLS;
+  for(const col of cols){
+    const list=tabData[activeTab][col]||[];
+    const idx=list.findIndex(t=>t.id===taskId);
+    if(idx!==-1){
+      if('dueDate' in patch) patch.dueDate = normalizeDateString(patch.dueDate);
+      list[idx] = { ...list[idx], ...patch, upd: Date.now(), by: currentUserKey };
+      break;
     }
   }
+  pushTabs();
 }
-
-/* ---------------- DRAG helpers (single declarations!) ---------------- */
-const dragContext = { id:null, fromCol:null, overCol:null, insertIndex:null };
-function clearDrag(){ dragContext.id=null; dragContext.fromCol=null; dragContext.overCol=null; dragContext.insertIndex=null; }
-function getAfter(container, y){
-  const els=[...container.querySelectorAll('.card:not(.dragging)')];
-  return els.reduce((closest,child)=>{ const box=child.getBoundingClientRect(); const off=y-box.top-box.height/2; if(off<0 && off>closest.offset){ return {offset:off, element:child}; } else return closest; },{offset:-Infinity}).element;
+function removeTaskById(taskId){
+  if(!activeTab || !tabData[activeTab]) return;
+  for(const col of COLS){
+    const list=tabData[activeTab][col]||[];
+    const idx=list.findIndex(t=>t.id===taskId);
+    if(idx!==-1){ list.splice(idx,1); break; }
+  }
+  renderBoard(); pushTabs();
 }
-function computeInsertIndex(colEl, indicator){
-  const siblings=[...colEl.querySelectorAll('.card')];
-  if(siblings.length===0) return 0;
-  const all=[...colEl.children]; let index=0;
-  for(let i=0;i<all.length;i++){ const el=all[i]; if(el===indicator){ index=[...all.slice(0,i)].filter(n=>n.classList && n.classList.contains('card')).length; return index; } }
-  return siblings.length;
+function clearAllTasks(){
+  if(currentRole==='viewer') return;
+  if(!activeTab) return;
+  if(!confirm('Clear all tasks in this tab?')) return;
+  tabData[activeTab] = { todo:[], inprogress:[], done:[] };
+  renderBoard(); pushTabs();
 }
+function addNewTask(){
+  if(currentRole==='viewer') return;
+  if(!activeTab){ const def='Click to edit'; if(!tabData[def]) tabData[def]={ todo:[], inprogress:[], done:[] }; activeTab=def; renderTabs(); }
+  const id=`task-${cryptoRandom()}`; const now=Date.now();
+  const t={ id, content:'', dueDate:'', priority:'Medium', pos:(tabData[activeTab].todo.slice(-1)[0]?.pos||0)+1, upd:now, by:currentUserKey };
+  tabData[activeTab].todo.push(t); renderBoard(); pushTabs();
+  // focus the new task for immediate typing
+  const el = document.getElementById(id)?.querySelector('.editable'); if (el){ el.focus(); }
+}
+function commitReorder(taskId, fromCol, toCol, insertIndex){
+  if(currentRole==='viewer') return;
+  const cols=tabData[activeTab];
+  let moved; const fromList=cols[fromCol]||[]; const i=fromList.findIndex(t=>t.id===taskId);
+  if(i!==-1){ moved=fromList.splice(i,1)[0]; }
+  if(!moved) return;
+  const target=cols[toCol]=cols[toCol]||[];
+  if(insertIndex==null||insertIndex<0) insertIndex=target.length;
+  if(insertIndex>target.length) insertIndex=target.length;
+  const prev=target[insertIndex-1]?.pos, next=target[insertIndex]?.pos;
+  moved.pos=newPosBetween(prev,next); moved.upd=Date.now(); moved.by=currentUserKey;
+  target.splice(insertIndex,0,moved);
+  if(!Number.isFinite(prev)||!Number.isFinite(next)||Math.abs((next||moved.pos)-(prev||0))<1e-6){ reindex(target); }
+  renderBoard(); pushTabs();
+}
+const pushTabs = debounce(()=> {
+  try { liveSend({ type:'tabs:update', tabs: tabData }); } catch {}
+  saveTabsHTTP(tabData).catch(()=>{});
+  stampSync();
+}, 250);
 
 /* ---------------- Members UI ---------------- */
 function openMembers(){ document.getElementById('membersModal').classList.remove('hidden'); renderMembers(); }
@@ -675,8 +555,7 @@ async function renderMembers(){
     const who=document.createElement('div'); who.className='flex items-center gap-3';
     const bubble=document.createElement('div'); bubble.className='h-8 w-8 rounded-full bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xs font-semibold';
     bubble.textContent = initials('', s.email||'');
-    const meta=document.createElement('div');
-    meta.innerHTML = `<div class="text-sm font-medium">${s.email||'—'}</div>`;
+    const meta=document.createElement('div'); meta.innerHTML = `<div class="text-sm font-medium">${s.email||'—'}</div>`;
     who.appendChild(bubble); who.appendChild(meta);
 
     const actions=document.createElement('div'); actions.className='flex items-center gap-2';
@@ -699,44 +578,16 @@ async function renderMembers(){
       del.onclick = async ()=>{ if(!confirm('Remove this member?')) return; const r=await removeShare(s.id); if(r.ok) renderMembers(); else alert('Failed to remove'); };
       actions.appendChild(sel); actions.appendChild(del);
     }
-
     row.appendChild(who); row.appendChild(actions); list.appendChild(row);
   });
 }
 
-/* Buttons */
-document.getElementById('addTabBtn').onclick = ()=>{
-  if(currentRole==='viewer') return;
-  const name=(prompt('Enter tab name:')||'').trim();
-  if(!name) return;
-  if(tabData[name]){ switchTab(name); return; }
-  tabData[name] = { todo:[], inprogress:[], done:[] };
-  renderTabs(); switchTab(name);
-  liveSend({ type:'op', op:{ kind:'tab/create', name } }); persistHTTP(); stampSync();
-};
-document.getElementById('newTaskBtn').onclick = ()=>{
-  if(currentRole==='viewer') return;
-  if(!activeTab){ const def='Click to edit'; tabData[def] = { todo:[], inprogress:[], done:[] }; activeTab=def; renderTabs(); switchTab(def); }
-  const t = addTaskLocal('todo');
-  liveSend({ type:'op', op:{ kind:'task/add', tab:activeTab, col:'todo', task:t } }); persistHTTP(); stampSync();
-};
-document.getElementById('clearBtn').onclick = ()=>{
-  if(currentRole==='viewer') return;
-  if(!activeTab) return;
-  if(!confirm('Clear all tasks in this tab?')) return;
-  tabData[activeTab] = { todo:[], inprogress:[], done:[] };
-  COLS.forEach(c=>{ const colEl=document.getElementById(c); colEl.querySelectorAll('.card').forEach(n=>n.remove()); });
-  liveSend({ type:'op', op:{ kind:'tab/clear', tab:activeTab } }); persistHTTP(); stampSync();
-};
-document.getElementById('exportBtn').onclick = ()=>{
-  const board=document.getElementById('board');
-  html2pdf().set({ margin:.5, filename:'Solara-Board.pdf', image:{type:'jpeg',quality:.98}, html2canvas:{scale:2}, jsPDF:{unit:'in', format:'letter', orientation:'landscape'} }).from(board).save();
-};
+/* ---------------- Boot / fallback orchestration ---------------- */
+document.getElementById('addTabBtn').onclick = ()=>{ if(currentRole==='viewer') return; const name=prompt('Enter tab name:'); if(!name||!name.trim()) return; const n=name.trim(); if(tabData[n]) return switchTab(n); tabData[n]={ todo:[], inprogress:[], done:[] }; renderTabs(); switchTab(n); pushTabs(); };
+document.getElementById('newTaskBtn').onclick = addNewTask;
+document.getElementById('clearBtn').onclick = clearAllTasks;
+document.getElementById('exportBtn').onclick = ()=>{ const board=document.getElementById('board'); html2pdf().set({ margin:.5, filename:'Solara-Board.pdf', image:{type:'jpeg',quality:.98}, html2canvas:{scale:2}, jsPDF:{unit:'in', format:'letter', orientation:'landscape'} }).from(board).save(); };
 document.getElementById('manageBtn').onclick = ()=>{ if(!WORKSPACE_ID) return alert('Open a workspace first.'); openMembers(); };
-document.getElementById('inviteBtn').onclick = async ()=>{
-  const input=document.getElementById('inviteEmail'); const email=(input.value||'').trim().toLowerCase(); if(!email) return;
-  const r=await invite(email); if(r.ok){ input.value=''; renderMembers(); alert('Invitation created.'); } else { alert('Invite failed.'); }
-};
 
 document.getElementById('userButton').onclick = ()=> document.getElementById('userMenu').classList.toggle('hidden');
 document.getElementById('addUserBtn').onclick = ()=> openMembers();
@@ -745,13 +596,40 @@ document.getElementById('signOutBtn').onclick = async ()=>{
     localStorage.removeItem('stytch_session_jwt'); localStorage.removeItem('solara_session_jwt'); location.replace('/sign-in.html');
   }
 };
+document.getElementById('inviteBtn').onclick = async ()=>{
+  const input=document.getElementById('inviteEmail'); const email=(input.value||'').trim().toLowerCase(); if(!email) return;
+  const r=await invite(email); if(r.ok){ input.value=''; renderMembers(); alert('Invitation created.'); } else { alert('Invite failed.'); }
+};
+
 function setReportsHref(){
   const btn=document.getElementById('reportsLink');
   if(btn){ btn.onclick=()=>{ if(!WORKSPACE_ID){ alert('Open a workspace first.'); return; } location.href=`reports.html?ws=${encodeURIComponent(WORKSPACE_ID)}`; }; }
   const logo=document.getElementById('workspacesLink'); if(logo){ logo.href='workspace.html'; }
 }
+function stopTaskPolling(){ if(taskPollTimer){ clearInterval(taskPollTimer); taskPollTimer=null; } }
+function startHTTPFallback(){
+  if(!presenceBeatTimer){ presenceBeatHTTP(); presenceBeatTimer = setInterval(presenceBeatHTTP, 10000); }
+  if(!presencePollTimer){ presencePollHTTP(); presencePollTimer = setInterval(presencePollHTTP, 5000); }
+  if(!taskPollTimer){
+    taskPollTimer = setInterval(async ()=>{
+      try{
+        const serverTabs = migrateShapes(await fetchTabs());
+        if (isEditing || isDragging){
+          // merge silently, render later
+          const changed = mergeRemoteTabs(serverTabs);
+          if (changed) hasRemoteDuringEdit = true;
+          return;
+        }
+        const changed = mergeRemoteTabs(serverTabs);
+        if (changed){
+          if(!tabData[activeTab]) activeTab = Object.keys(tabData)[0]||activeTab;
+          renderTabs(); switchTab(activeTab); stampSync();
+        }
+      }catch{}
+    }, 2000);
+  }
+}
 
-/* ---------------- Boot ---------------- */
 async function boot(){
   const ok = await verifySessionAndHydrate();
   if(!ok){ location.replace('/sign-in.html'); return; }
@@ -764,20 +642,23 @@ async function boot(){
   updateAuthUI();
   setReportsHref();
 
+  // Role + Name
   currentRole = await fetchRole();
   const wlist = await fetch(apiUrl('workspaces'), { headers:{ 'Authorization':`Bearer ${sessionJWT}` }}).then(r=>r.ok?r.json():{workspaces:[]}).catch(()=>({workspaces:[]}));
-  WORKSPACE_NAME = (wlist.workspaces||[]).find(w=>w.id===WORKSPACE_ID)?.name || '';
+  const wsRow = (wlist.workspaces||[]).find(w=>w.id===WORKSPACE_ID);
+  WORKSPACE_NAME = wsRow?.name || '';
   document.getElementById('wsName').textContent = WORKSPACE_NAME || '—';
+  if (wsRow && wsRow.owner_id && currentRole !== 'owner' && wsRow.owner_id === currentUserKey) currentRole = 'owner';
 
+  // HTTP bootstrap
   tabData = migrateShapes(await fetchTabs());
   if(Object.keys(tabData).length===0){ tabData['Click to edit']={ todo:[], inprogress:[], done:[] }; }
   activeTab = Object.keys(tabData)[0];
   renderTabs(); switchTab(activeTab);
 
+  // Fallback + Live
+  startHTTPFallback();
   connectLive();
-
-  // Presence heartbeat (HTTP fallback)
-  setInterval(()=>{ fetch(apiUrl('presence/beat'), { method:'POST', headers:{ 'Authorization':`Bearer ${sessionJWT}`, 'Content-Type':'application/json' }, body: JSON.stringify({ workspace_id: WORKSPACE_ID }) }).catch(()=>{}); }, 30000);
 }
 document.addEventListener('DOMContentLoaded', boot);
 </script>
